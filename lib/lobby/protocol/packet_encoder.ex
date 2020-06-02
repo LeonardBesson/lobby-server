@@ -36,7 +36,7 @@ defmodule Lobby.Protocol.PacketEncoder do
     end
   end
 
-  defp pack(%__MODULE__{packets: packets, buffers: buffers} = encoder) do
+  defp pack(%__MODULE__{packets: packets} = encoder) do
     if Queue.empty?(packets) do
       encoder
     else
@@ -55,9 +55,9 @@ defmodule Lobby.Protocol.PacketEncoder do
       {packet, packets} = Queue.pop_front(packets)
 
       current_length = IO.iodata_length(current_buffer)
+      required_size = current_length + @max_packet_header_size + Packet.data_size(packet)
 
-      if current_buffer > 0 and
-           current_length + @max_packet_header_size + Packet.data_size(packet) > target_size do
+      if current_length > 0 and required_size > target_size do
         buffers = buffers |> Queue.push_back(current_buffer)
         %{encoder | buffers: buffers}
       else
