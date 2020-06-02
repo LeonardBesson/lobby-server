@@ -9,6 +9,10 @@ defmodule Lobby.Utils.Queue do
           inner: {list(any), list(any)},
           length: non_neg_integer
         }
+  @type t(inner) :: %__MODULE__{
+          inner: {list(inner), list(inner)},
+          length: non_neg_integer
+        }
 
   @spec new :: t()
   def new do
