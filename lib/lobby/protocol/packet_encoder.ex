@@ -68,14 +68,13 @@ defmodule Lobby.Protocol.PacketEncoder do
           packet.data::binary
         >>
 
+        # Discard empty buffers
         current_buffer =
-          # Discard empty buffers
           if current_length == 0 do
             new_buffer
           else
             [current_buffer, new_buffer]
           end
-
 
         encoder = %{encoder | packets: packets}
         pack(encoder, current_buffer)

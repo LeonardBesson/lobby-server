@@ -53,24 +53,9 @@ defmodule Lobby.Utils.ByteStream do
     end
   end
 
-  defp read_internal(%Queue{} = buffers, remaining, result) do
+  defp read_internal(%Queue{} = buffers, remaining, result) when is_integer(remaining) do
     {buffer, buffers} = Queue.pop_front(buffers)
     size = byte_size(buffer)
-
-    #    cond do
-    #      remaining > size ->
-    #        read_internal(buffers, remaining - size, [result, buffer])
-    #
-    #      remaining == size ->
-    #        {IO.iodata_to_binary([result, buffer]), buffers}
-    #
-    #      true ->
-    #        <<truncated::binary-size(remaining), rest::binary>> = buffer
-    #
-    #        buffers = buffers |> Queue.push_front(rest)
-    #        result = IO.iodata_to_binary([result, truncated])
-    #        {result, buffers}
-    #    end
 
     if remaining > size do
       read_internal(buffers, remaining - size, [result, buffer])

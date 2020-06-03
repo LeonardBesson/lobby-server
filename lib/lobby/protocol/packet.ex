@@ -95,6 +95,11 @@ defmodule Lobby.Protocol.Packet do
     end
   end
 
+  def parse_type!(0), do: :packet_init
+
+  def parse_type!(type),
+    do: raise(ArgumentError, message: "Packet #{inspect(type)} doesn't exist")
+
   def data_size(%__MODULE__{data: data}) do
     byte_size(data)
   end
