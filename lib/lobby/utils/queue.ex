@@ -25,8 +25,23 @@ defmodule Lobby.Utils.Queue do
     %{queue | inner: inner, length: length + 1}
   end
 
+  def push_front(%__MODULE__{inner: inner, length: length} = queue, value) do
+    inner = :queue.in_r(value, inner)
+    %{queue | inner: inner, length: length + 1}
+  end
+
   def pop_front(%__MODULE__{inner: inner, length: length} = queue) do
     case :queue.out(inner) do
+      {:empty, _} ->
+        {nil, queue}
+
+      {{:value, value}, inner} ->
+        {value, %{queue | inner: inner, length: length - 1}}
+    end
+  end
+
+  def pop_back(%__MODULE__{inner: inner, length: length} = queue) do
+    case :queue.out_r(inner) do
       {:empty, _} ->
         {nil, queue}
 
