@@ -43,7 +43,7 @@ defmodule Lobby.Protocol.PacketDecoder do
           rest::binary
         >> = header
 
-        packet_type = Packet.parse_type!(type)
+        packet_type = Packet.get_type!(type)
         packet_info = Packet.get!(packet_type)
 
         data_size =

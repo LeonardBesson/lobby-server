@@ -83,10 +83,10 @@ defmodule Lobby.Protocol.PacketEncoder do
   end
 
   defp encode_type(%Packet{flags: flags} = packet) when Packet.short_type?(flags),
-    do: <<Packet.int_type!(packet)::size(8)>>
+    do: <<Packet.get_id!(packet)::size(8)>>
 
   defp encode_type(%Packet{} = packet),
-    do: <<Packet.int_type!(packet)::big-integer-size(16)>>
+    do: <<Packet.get_id!(packet)::big-integer-size(16)>>
 
   defp encode_size(%Packet{flags: flags} = packet) when Packet.short_size?(flags),
     do: <<Packet.data_size(packet)::size(8)>>

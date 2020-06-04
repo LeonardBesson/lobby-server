@@ -4,6 +4,7 @@ defmodule Lobby.Protocol.Packet do
   """
   use Bitwise
   alias Lobby.Protocol.PacketInfo
+  import Lobby.Protocol.PacketUtils
 
   defstruct flags: 0, packet_type: 0, data: <<>>
 
@@ -13,16 +14,8 @@ defmodule Lobby.Protocol.Packet do
           data: binary
         }
 
-  @packet_types %{
-    packet_init: 0
-  }
+  declare_packets(packet_init: 0)
 
-  # TODO: macro
-  @packet_infos %{
-    packet_init: %PacketInfo{packet_type: :packet_init, name: "PacketInit", fixed_size: nil}
-  }
-
-  # Flags
   @flag_fixed_header 1 <<< 7
   @flag_short_type 1 <<< 6
   @flag_short_size 1 <<< 5
@@ -77,28 +70,42 @@ defmodule Lobby.Protocol.Packet do
     %__MODULE__{flags: flags, packet_type: type, data: data}
   end
 
+  @doc """
+  Return true if the packet of the given type is declared
+  """
   def has?(type), do: Map.has_key?(@packet_infos, type)
 
+  @doc """
+  Return the packet info for the given packet type
+  """
   def get!(type) do
     case @packet_infos[type] do
-      nil -> raise ArgumentError, message: "Packet #{inspect(type)} doesn't exist"
+      nil -> raise ArgumentError, message: "Packet #{inspect(type)} not declared"
       packet_type -> packet_type
     end
   end
 
-  def int_type!(%__MODULE__{packet_type: type}), do: int_type!(type)
+  @doc """
+  Return the packet id for the given packet type
+  """
+  def get_id!(%__MODULE__{packet_type: type}), do: get_id!(type)
 
-  def int_type!(type) do
+  def get_id!(type) do
     case @packet_types[type] do
-      nil -> raise ArgumentError, message: "Packet #{inspect(type)} doesn't exist"
+      nil -> raise ArgumentError, message: "Packet #{inspect(type)} not declared"
       int_type -> int_type
     end
   end
 
-  def parse_type!(0), do: :packet_init
-
-  def parse_type!(type),
-    do: raise(ArgumentError, message: "Packet #{inspect(type)} doesn't exist")
+  @doc """
+  Return the packet type for the given packet id
+  """
+  def get_type!(packet_id) do
+    case @packet_ids[packet_id] do
+      nil -> raise ArgumentError, message: "Packet ID #{inspect(packet_id)} not declared"
+      packet_type -> packet_type
+    end
+  end
 
   def data_size(%__MODULE__{data: data}) do
     byte_size(data)
