@@ -3,7 +3,9 @@ defmodule Lobby.ClientConn do
   A simple TCP protocol handler that echoes all messages received.
   """
   use GenServer
-
+  alias Lobby.Connection
+  alias Lobby.Protocol.PacketDecoder
+  alias Lobby.Protocol.PacketEncoder
   require Logger
 
   @behaviour :ranch_protocol
@@ -35,44 +37,43 @@ defmodule Lobby.ClientConn do
 
     Logger.info("Peer #{peername} connecting")
 
-    :gen_server.enter_loop(__MODULE__, [], %{
-      socket: socket,
-      transport: transport,
-      peername: peername
-    })
+    state = %{
+      conn: Connection.new(socket, transport, peername)
+    }
+
+    :gen_server.enter_loop(__MODULE__, [], state)
   end
 
   @impl GenServer
   def handle_info(
         {:tcp, _, message},
-        %{socket: socket, transport: transport, peername: peername} = state
+        %{conn: conn} = state
       ) do
-    Logger.info("Received #{inspect(message)} from #{peername}")
+    Logger.info("Received #{inspect(message)} from #{conn.peername}")
 
-    case transport.send(socket, message) do
-      :ok ->
-        :ok
+    conn = Connection.received(conn, message) |> Connection.enable_receive_once()
 
-      {:error, reason} ->
-        Logger.error("Failed to send message to #{peername}, reason: #{inspect(reason)}")
-    end
+    send(self(), :flush)
 
-    transport.setopts(socket, active: :once)
-
-    {:noreply, state}
+    {:noreply, %{state | conn: conn}}
   end
 
   @impl GenServer
-  def handle_info({:tcp_closed, _}, %{peername: peername} = state) do
-    Logger.info("Peer #{peername} disconnected")
+  def handle_info({:tcp_closed, _}, %{conn: conn} = state) do
+    Logger.info("Peer #{conn.peername} disconnected")
 
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, _, reason}, %{peername: peername} = state) do
-    Logger.info("Error with peer #{peername}: #{inspect(reason)}")
+  def handle_info({:tcp_error, _, reason}, %{conn: conn} = state) do
+    Logger.info("Error with peer #{conn.peername}: #{inspect(reason)}")
 
     {:stop, :normal, state}
+  end
+
+  def handle_info(:flush, %{conn: conn} = state) do
+    conn = Connection.flush(conn)
+    {:noreply, %{state | conn: conn}}
   end
 
   defp stringify_peername(socket) do

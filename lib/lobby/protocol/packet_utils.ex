@@ -5,7 +5,7 @@ defmodule Lobby.Protocol.PacketUtils do
   alias Lobby.Protocol.PacketInfo
 
   @doc """
-  Macro used to define the packets. Given a list of tuple {packet_type, packet_id},
+  Macro used to define the packets. Given a keyword list of [packet_type: packet_id],
   it will populate 3 attributes in the caller modules. @packet_types for the type to id
   mapping, @packet_ids for the id to type mapping, and @packet_infos for the type to
   %PacketInfo{} mapping.

@@ -1,6 +1,7 @@
 defmodule Lobby.Utils.Queue do
   @moduledoc """
-  A wrapper for Erlang's queue
+  A wrapper for Erlang's queue. It keeps track of length and provides
+  push/pop front/back notations for the API
   """
 
   defstruct inner: nil, length: 0
@@ -50,11 +51,7 @@ defmodule Lobby.Utils.Queue do
     end
   end
 
-  def length(%__MODULE__{length: length} = queue) do
-    length
-  end
+  def length(%__MODULE__{length: length} = queue), do: length
 
-  def empty?(%__MODULE__{length: length} = queue) do
-    length == 0
-  end
+  def empty?(%__MODULE__{length: length} = queue), do: length == 0
 end
