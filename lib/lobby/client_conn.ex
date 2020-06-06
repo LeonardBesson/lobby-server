@@ -4,8 +4,10 @@ defmodule Lobby.ClientConn do
   """
   use GenServer
   alias Lobby.Connection
+  alias Lobby.Protocol.Packet
   alias Lobby.Protocol.PacketDecoder
   alias Lobby.Protocol.PacketEncoder
+  alias Lobby.Protocol.Message
   require Logger
 
   @behaviour :ranch_protocol
@@ -58,7 +60,20 @@ defmodule Lobby.ClientConn do
     {:noreply, %{state | conn: conn}}
   end
 
-  # TODO: add send
+  def send_message(client, message) do
+    GenServer.cast(client, {:send_message, message})
+  end
+
+  @impl GenServer
+  def handle_cast({:send_message, message}, %{conn: conn} = state) do
+    Logger.info("Sending message: #{inspect(message)}")
+    packet_type = Message.packet_type(message)
+    packet_data = Message.serialize(message)
+    packet = Packet.new(packet_type, packet_data)
+
+    conn = Connection.send_packet(conn, packet)
+    {:noreply, %{state | conn: conn}}
+  end
 
   @impl GenServer
   def handle_info({:tcp_closed, _}, %{conn: conn} = state) do

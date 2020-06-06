@@ -14,7 +14,15 @@ defmodule Lobby.Protocol.Packet do
           data: binary
         }
 
-  declare_packets(packet_init: {0, [protocol_version: :u16, app_version: :u16]})
+  declare_packets(
+    packet_init:
+      {0,
+       [
+         protocol_version: :u16,
+         app_version: :u16,
+         peer_name: :string
+       ]}
+  )
 
   @flag_fixed_header 1 <<< 7
   @flag_short_type 1 <<< 6

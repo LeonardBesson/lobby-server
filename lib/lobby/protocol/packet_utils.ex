@@ -37,12 +37,22 @@ defmodule Lobby.Protocol.PacketUtils do
 
       serialize_quoted_fields =
         for {field_name, field_type} <- fields do
-          Bincode.serialize(field_name, field_type)
+          quote do
+            <<Bincode.serialize(
+                var!(message).unquote(Macro.var(field_name, nil)),
+                unquote(field_type)
+              )::binary>>
+          end
         end
 
       deserialize_quoted_fields =
         for {field_name, field_type} <- fields do
-          Bincode.deserialize(field_name, field_type)
+          quote do
+            {
+              var!(unquote(Macro.var(field_name, nil))),
+              var!(data)
+            } = Bincode.deserialize(var!(data), unquote(field_type))
+          end
         end
 
       message_struct_quoted_fields =
@@ -54,18 +64,21 @@ defmodule Lobby.Protocol.PacketUtils do
         defmodule unquote(message_module) do
           defstruct unquote(struct_data)
 
-          def serialize(message) do
-            var!(message) = message
+          def serialize(%unquote(message_module){} = var!(message)) do
             <<unquote_splicing(serialize_quoted_fields)>>
           end
 
-          def deserialize(data) do
-            <<unquote_splicing(deserialize_quoted_fields)>> = data
+          def deserialize(var!(data)) do
+            unquote_splicing(deserialize_quoted_fields)
             struct!(unquote(message_module), unquote(message_struct_quoted_fields))
           end
         end
 
-        defimpl Lobby.Protocol.MessageSerializer, for: unquote(message_module) do
+        defimpl Lobby.Protocol.Message, for: unquote(message_module) do
+          def packet_type(_message) do
+            unquote(type)
+          end
+
           def serialize(message) do
             unquote(message_module).serialize(message)
           end

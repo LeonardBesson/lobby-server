@@ -64,6 +64,9 @@ defmodule Lobby.Connection do
         msg = PacketInit.deserialize(packet.data)
         Logger.info("Casted to #{inspect(msg)}")
 
+        # For now just echo
+        Lobby.ClientConn.send_message(self(), msg)
+
       type ->
         Logger.error("Unknown packet type #{type}")
     end
@@ -166,8 +169,6 @@ defmodule Lobby.Connection do
       conn
     else
       incoming_packet(packet)
-      # For now just echo
-      conn = send_packet(conn, packet)
 
       handle_incoming_packets(conn)
     end
