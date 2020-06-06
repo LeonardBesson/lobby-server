@@ -5,6 +5,7 @@ defmodule Lobby.Connection do
   alias Lobby.Protocol.Packet
   alias Lobby.Protocol.PacketDecoder
   alias Lobby.Protocol.PacketEncoder
+  alias Lobby.Messages.PacketInit
   alias Lobby.Utils.Queue
 
   require Logger
@@ -39,7 +40,7 @@ defmodule Lobby.Connection do
     %__MODULE__{socket: socket, transport: transport, peername: peername}
   end
 
-  def enable_receive_once(%__MODULE__{socket: socket, transport: transport} = conn) do
+  def continue_receiving(%__MODULE__{socket: socket, transport: transport} = conn) do
     transport.setopts(socket, active: :once)
     conn
   end
@@ -53,6 +54,19 @@ defmodule Lobby.Connection do
     Logger.info("Sending packet #{inspect(packet)}")
     tcp_encoder = PacketEncoder.add_packet(tcp_encoder, packet)
     %{conn | tcp_encoder: tcp_encoder}
+  end
+
+  defp incoming_packet(%Packet{} = packet) do
+    Logger.info("Received incoming packet #{inspect(packet)}")
+
+    case packet.packet_type do
+      :packet_init ->
+        msg = PacketInit.deserialize(packet.data)
+        Logger.info("Casted to #{inspect(msg)}")
+
+      type ->
+        Logger.error("Unknown packet type #{type}")
+    end
   end
 
   def flush(%__MODULE__{} = conn) do
@@ -147,10 +161,11 @@ defmodule Lobby.Connection do
   def handle_incoming_packets(%__MODULE__{tcp_decoder: tcp_decoder} = conn) do
     {packet, tcp_decoder} = PacketDecoder.next_packet(tcp_decoder)
     conn = %{conn | tcp_decoder: tcp_decoder}
+
     if packet == nil do
       conn
     else
-      Logger.info("Received incoming packet #{inspect(packet)}")
+      incoming_packet(packet)
       # For now just echo
       conn = send_packet(conn, packet)
 

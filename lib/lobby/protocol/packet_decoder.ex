@@ -30,7 +30,7 @@ defmodule Lobby.Protocol.PacketDecoder do
       type_size = if Packet.short_type?(flags), do: 8, else: 16
       size_size = if Packet.short_size?(flags), do: 8, else: 24
 
-      header_size = floor((8 + type_size + size_size) / 8)
+      header_size = div(8 + type_size + size_size, 8)
 
       if remaining < header_size do
         {nil, decoder}
@@ -40,7 +40,7 @@ defmodule Lobby.Protocol.PacketDecoder do
         <<
           flags::size(8),
           type::big-integer-size(type_size),
-          rest::binary
+          header_rest::binary
         >> = header
 
         packet_type = Packet.get_type!(type)
@@ -50,7 +50,7 @@ defmodule Lobby.Protocol.PacketDecoder do
           if packet_info.fixed_size != nil do
             packet_info.fixed_size
           else
-            <<size::big-integer-size(size_size)>> = rest
+            <<size::big-integer-size(size_size)>> = header_rest
             size
           end
 

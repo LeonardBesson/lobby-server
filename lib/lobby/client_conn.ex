@@ -51,12 +51,14 @@ defmodule Lobby.ClientConn do
       ) do
     Logger.info("Received #{inspect(message)} from #{conn.peername}")
 
-    conn = Connection.received(conn, message) |> Connection.enable_receive_once()
+    conn = Connection.received(conn, message) |> Connection.continue_receiving()
 
     send(self(), :flush)
 
     {:noreply, %{state | conn: conn}}
   end
+
+  # TODO: add send
 
   @impl GenServer
   def handle_info({:tcp_closed, _}, %{conn: conn} = state) do
