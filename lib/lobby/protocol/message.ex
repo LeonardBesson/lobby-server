@@ -1,6 +1,7 @@
 defprotocol Lobby.Protocol.Message do
   @moduledoc """
-  Protocol used to serialize the messages structs into binary
+  Protocol responsible for serializing the messages structs
+  into packets.
   """
 
   @type message :: any

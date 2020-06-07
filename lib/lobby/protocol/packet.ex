@@ -19,8 +19,7 @@ defmodule Lobby.Protocol.Packet do
       {0,
        [
          protocol_version: :u16,
-         app_version: :u16,
-         peer_name: :string
+         app_version: :u16
        ]}
   )
 

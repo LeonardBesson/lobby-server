@@ -24,6 +24,23 @@ defmodule Lobby.Protocol.Bincode do
     >>
   end
 
+  def serialize(value, {:list, inner}) when is_list(value) do
+    serialize(value, 0, <<>>, {:list, inner})
+  end
+
+  def serialize([], length, result, {:list, inner}) do
+    <<
+      length::little-integer-size(64),
+      IO.iodata_to_binary(result)::binary
+    >>
+  end
+
+  def serialize([head | tail], length, result, {:list, inner}) do
+    serialized = serialize(head, inner)
+    result = [result, serialized]
+    serialize(tail, length + 1, result, {:list, inner})
+  end
+
   def serialize(value, type) do
     raise ArgumentError,
       message: "Cannot serialize value #{inspect(value)} into type #{inspect(type)}"
@@ -38,6 +55,28 @@ defmodule Lobby.Protocol.Bincode do
         :string
       ) do
     {content, rest}
+  end
+
+  def deserialize(
+        <<
+          size::little-integer-size(64),
+          rest::binary
+        >>,
+        {:list, inner}
+      ) do
+    deserialize(rest, size, [], {:list, inner})
+  end
+
+  def deserialize(rest, 0, result, {:list, inner}) do
+    result = Enum.reverse(result)
+    {result, rest}
+  end
+
+  def deserialize(rest, remaining, result, {:list, inner}) do
+    {deserialized, rest} = deserialize(rest, inner)
+    result = [deserialized | result]
+
+    deserialize(rest, remaining - 1, result, {:list, inner})
   end
 
   def deserialize(value, type) do
