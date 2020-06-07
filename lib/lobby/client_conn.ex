@@ -3,14 +3,18 @@ defmodule Lobby.ClientConn do
   A simple TCP protocol handler that echoes all messages received.
   """
   use GenServer
+  require Lobby
   alias Lobby.Connection
   alias Lobby.Protocol.Packet
-  alias Lobby.Protocol.PacketDecoder
-  alias Lobby.Protocol.PacketEncoder
-  alias Lobby.Protocol.Message
+  import Lobby.Protocol.PacketUtils
+  alias Lobby.Messages.PacketInit
+  alias Lobby.Messages.FatalError
   require Logger
 
   @behaviour :ranch_protocol
+
+  @protocol_version Lobby.compile_env!(:protocol_version)
+  @app_version Lobby.compile_env!(:app_version)
 
   @doc """
   Starts the handler with `:proc_lib.spawn_link/3`.
@@ -39,11 +43,31 @@ defmodule Lobby.ClientConn do
 
     Logger.info("Peer #{peername} connecting")
 
-    state = %{
-      conn: Connection.new(socket, transport, peername)
+    conn = Connection.new(socket, transport, peername)
+
+    # Init handshake
+    packet_init = %PacketInit{
+      protocol_version: @protocol_version,
+      app_version: @app_version
     }
 
-    :gen_server.enter_loop(__MODULE__, [], state)
+    send_message(self(), packet_init)
+
+    :gen_server.enter_loop(__MODULE__, [], %{conn: conn})
+  end
+
+  def send_message(client, message) do
+    GenServer.cast(client, {:send_message, message})
+  end
+
+  @impl GenServer
+  def handle_cast({:send_message, message}, %{conn: conn} = state) do
+    Logger.info("Sending message: #{inspect(message)}")
+    packet = message_to_packet(message)
+    conn = Connection.send_packet(conn, packet)
+    send(self(), :flush)
+
+    {:noreply, %{state | conn: conn}}
   end
 
   @impl GenServer
@@ -55,23 +79,14 @@ defmodule Lobby.ClientConn do
 
     conn = Connection.received(conn, message) |> Connection.continue_receiving()
 
+    # TODO: Instead of sending this all the time, we should
+    # schedule a flush at most every X ms using Process.send_after().
+    # That way we don't risk surcharging the mailbox with constant flush
+    # messages that have no effect (i.e if we send 2 packets in a row it will
+    # flush 2 times but the second one is useless.
+    # tickrate of 60 should be enough
     send(self(), :flush)
 
-    {:noreply, %{state | conn: conn}}
-  end
-
-  def send_message(client, message) do
-    GenServer.cast(client, {:send_message, message})
-  end
-
-  @impl GenServer
-  def handle_cast({:send_message, message}, %{conn: conn} = state) do
-    Logger.info("Sending message: #{inspect(message)}")
-    packet_type = Message.packet_type(message)
-    packet_data = Message.serialize(message)
-    packet = Packet.new(packet_type, packet_data)
-
-    conn = Connection.send_packet(conn, packet)
     {:noreply, %{state | conn: conn}}
   end
 
@@ -89,8 +104,46 @@ defmodule Lobby.ClientConn do
   end
 
   def handle_info(:flush, %{conn: conn} = state) do
-    conn = Connection.flush(conn)
+    {incoming_packets, conn} = Connection.flush(conn)
+    conn = Enum.reduce(incoming_packets, conn, &handle_incoming_packet/2)
+
     {:noreply, %{state | conn: conn}}
+  end
+
+  defp handle_incoming_packet(%Packet{} = packet, %Connection{} = conn) do
+    Logger.info("Received incoming packet #{inspect(packet)}")
+
+    case packet.packet_type do
+      :packet_init ->
+        msg = PacketInit.deserialize(packet.data)
+
+        cond do
+          msg.protocol_version != @protocol_version ->
+            disconnect(conn, "Invalid protocol version #{msg.protocol_version}")
+
+          msg.app_version != @app_version ->
+            disconnect(conn, "Invalid application version #{msg.protocol_version}")
+
+          true ->
+            conn
+        end
+
+      :fatal_error ->
+        msg = FatalError.deserialize(packet.data)
+        Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
+        conn
+
+      type ->
+        Logger.error("Unknown packet type #{type}")
+        conn
+    end
+  end
+
+  defp disconnect(conn, error_message) when is_binary(error_message) do
+    message = %FatalError{message: error_message}
+    conn = Connection.send_packet(conn, message_to_packet(message))
+    {_, conn} = Connection.flush(conn)
+    Connection.shutdown(conn)
   end
 
   defp stringify_peername(socket) do

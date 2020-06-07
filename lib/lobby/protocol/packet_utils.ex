@@ -4,6 +4,8 @@ defmodule Lobby.Protocol.PacketUtils do
   """
   alias Lobby.Protocol.PacketInfo
   alias Lobby.Protocol.Bincode
+  alias Lobby.Protocol.Packet
+  alias Lobby.Protocol.Message
 
   @doc """
   Macro used to define the packets. Given a keyword list of [packet_type: {packet_id, [field_name: field_type]}],
@@ -85,5 +87,11 @@ defmodule Lobby.Protocol.PacketUtils do
         end
       end
     end
+  end
+
+  def message_to_packet(message) do
+    packet_type = Message.packet_type(message)
+    packet_data = Message.serialize(message)
+    Packet.new(packet_type, packet_data)
   end
 end

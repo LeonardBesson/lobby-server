@@ -5,7 +5,6 @@ defmodule Lobby.Connection do
   alias Lobby.Protocol.Packet
   alias Lobby.Protocol.PacketDecoder
   alias Lobby.Protocol.PacketEncoder
-  alias Lobby.Messages.PacketInit
   alias Lobby.Utils.Queue
 
   require Logger
@@ -56,22 +55,6 @@ defmodule Lobby.Connection do
     %{conn | tcp_encoder: tcp_encoder}
   end
 
-  defp incoming_packet(%Packet{} = packet) do
-    Logger.info("Received incoming packet #{inspect(packet)}")
-
-    case packet.packet_type do
-      :packet_init ->
-        msg = PacketInit.deserialize(packet.data)
-        Logger.info("Casted to #{inspect(msg)}")
-
-        # For now just echo
-        Lobby.ClientConn.send_message(self(), msg)
-
-      type ->
-        Logger.error("Unknown packet type #{type}")
-    end
-  end
-
   def flush(%__MODULE__{} = conn) do
     conn
     # Out
@@ -81,7 +64,7 @@ defmodule Lobby.Connection do
     # In
     |> process_in()
     |> decode()
-    |> handle_incoming_packets()
+    |> incoming_packets()
   end
 
   defp encode(%__MODULE__{tcp_encoder: tcp_encoder, unprocessed_out: unprocessed_out} = conn) do
@@ -161,16 +144,25 @@ defmodule Lobby.Connection do
     end
   end
 
-  def handle_incoming_packets(%__MODULE__{tcp_decoder: tcp_decoder} = conn) do
+  def incoming_packets(%__MODULE__{} = conn), do: incoming_packets(conn, [])
+
+  def incoming_packets(%__MODULE__{tcp_decoder: tcp_decoder} = conn, packets) do
     {packet, tcp_decoder} = PacketDecoder.next_packet(tcp_decoder)
     conn = %{conn | tcp_decoder: tcp_decoder}
 
     if packet == nil do
-      conn
+      {Enum.reverse(packets), conn}
     else
-      incoming_packet(packet)
-
-      handle_incoming_packets(conn)
+      incoming_packets(conn, [packet | packets])
     end
+  end
+
+  def shutdown(%__MODULE__{socket: socket, transport: transport} = conn) do
+    case transport.shutdown(socket, :read_write) do
+      :ok -> Logger.info("Closed connection with peer: #{conn.peername}")
+      {:error, reason} -> Logger.error("Error while closing connection: #{inspect(reason)}")
+    end
+
+    conn
   end
 end

@@ -15,12 +15,8 @@ defmodule Lobby.Protocol.Packet do
         }
 
   declare_packets(
-    packet_init:
-      {0,
-       [
-         protocol_version: :u16,
-         app_version: :u16
-       ]}
+    fatal_error: {0, [message: :string]},
+    packet_init: {1, [protocol_version: :u16, app_version: :u16]}
   )
 
   @flag_fixed_header 1 <<< 7

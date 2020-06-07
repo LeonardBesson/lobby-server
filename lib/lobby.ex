@@ -3,16 +3,26 @@ defmodule Lobby do
   Documentation for `Lobby`.
   """
 
-  @doc """
-  Hello world.
+  def env, do: Application.get_env(:lobby, :env)
 
-  ## Examples
+  @spec get_env!(atom) :: any | no_return
+  def get_env!(key) when is_atom(key) do
+    case Application.fetch_env(:lobby, key) do
+      {:ok, {:system, var}} when is_binary(var) ->
+        System.get_env(var)
 
-      iex> Lobby.hello()
-      :world
+      {:ok, value} ->
+        value
 
-  """
-  def hello do
-    :world
+      :error ->
+        raise ArgumentError, "Configuration parameter #{inspect(key)} is missing"
+    end
+  end
+
+  @spec compile_env!(atom) :: any | no_return
+  defmacro compile_env!(key) when is_atom(key) do
+    quote do
+      Application.compile_env!(:lobby, unquote(key))
+    end
   end
 end

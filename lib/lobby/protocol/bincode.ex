@@ -57,13 +57,7 @@ defmodule Lobby.Protocol.Bincode do
     {content, rest}
   end
 
-  def deserialize(
-        <<
-          size::little-integer-size(64),
-          rest::binary
-        >>,
-        {:list, inner}
-      ) do
+  def deserialize(<<size::little-integer-size(64), rest::binary>>, {:list, inner}) do
     deserialize(rest, size, [], {:list, inner})
   end
 
