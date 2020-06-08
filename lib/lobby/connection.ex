@@ -103,7 +103,6 @@ defmodule Lobby.Connection do
   def process_out(
         %__MODULE__{unprocessed_out: unprocessed_out, processed_out: processed_out} = conn
       ) do
-    # TODO: processors
     {buffer, unprocessed_out} = Queue.pop_front(unprocessed_out)
 
     if buffer == nil do
@@ -116,7 +115,6 @@ defmodule Lobby.Connection do
   end
 
   def process_in(%__MODULE__{unprocessed_in: unprocessed_in, processed_in: processed_in} = conn) do
-    # TODO: processors
     {buffer, unprocessed_in} = Queue.pop_front(unprocessed_in)
 
     if buffer == nil do
@@ -135,14 +133,14 @@ defmodule Lobby.Connection do
        ) do
     # Processors are applied backwards inbound and forward outbound.
     # They are prepended when inserted that's why we reverse them for out instead of in
-    get_processors = fn processors ->
+    flip_processors = fn processors ->
       case direction do
         :in -> processors
         :out -> Enum.reverse(processors)
       end
     end
 
-    processors = get_processors.(buffer_processors)
+    processors = flip_processors.(buffer_processors)
 
     {processors, buffer} =
       Enum.map_reduce(processors, buffer, fn processor, buffer ->
@@ -152,7 +150,7 @@ defmodule Lobby.Connection do
       end)
 
     # Reverse back to original order
-    processors = get_processors.(processors)
+    processors = flip_processors.(processors)
     {buffer, %{conn | buffer_processors: processors}}
   end
 

@@ -2,8 +2,15 @@ defmodule Lobby.Protocol.Bincode do
   @moduledoc """
   A serialization module compatible with Rust's bincode (https://github.com/servo/bincode).
   """
+  # Unsigned
   for int_type <- [:u8, :u16, :u32, :u64, :u128] do
     {size, ""} = to_string(int_type) |> String.trim_leading("u") |> Integer.parse()
+
+    def serialize(value, unquote(int_type)) when value < 0 do
+      raise ArgumentError,
+        message:
+          "Attempt to serialize negative integer #{inspect(value)} into #{unquote(int_type)}"
+    end
 
     def serialize(value, unquote(int_type)) do
       <<value::little-integer-size(unquote(size))>>
@@ -17,6 +24,52 @@ defmodule Lobby.Protocol.Bincode do
     end
   end
 
+  # Signed
+  for int_type <- [:i8, :i16, :i32, :i64, :i128] do
+    {size, ""} = to_string(int_type) |> String.trim_leading("i") |> Integer.parse()
+
+    def serialize(value, unquote(int_type)) do
+      <<value::little-integer-signed-size(unquote(size))>>
+    end
+
+    def deserialize(
+          <<value::little-integer-signed-size(unquote(size)), rest::binary>>,
+          unquote(int_type)
+        ) do
+      {value, rest}
+    end
+  end
+
+  # Float
+  for float_type <- [:f32, :f64] do
+    {size, ""} = to_string(float_type) |> String.trim_leading("f") |> Integer.parse()
+
+    def serialize(value, unquote(float_type)) do
+      <<value::little-float-size(unquote(size))>>
+    end
+
+    def deserialize(
+          <<value::little-float-size(unquote(size)), rest::binary>>,
+          unquote(float_type)
+        ) do
+      {value, rest}
+    end
+  end
+
+  # Bool
+  for boolean <- [true, false] do
+    v = if boolean, do: 1, else: 0
+
+    def serialize(unquote(boolean), :bool) do
+      <<unquote(v)::size(8)>>
+    end
+
+    def deserialize(<<unquote(v)::size(8), rest::binary>>, :bool) do
+      {unquote(boolean), rest}
+    end
+  end
+
+  # String
   def serialize(value, :string) do
     <<
       byte_size(value)::little-integer-size(64),
@@ -24,6 +77,7 @@ defmodule Lobby.Protocol.Bincode do
     >>
   end
 
+  # List
   def serialize(value, {:list, inner}) when is_list(value) do
     serialize(value, 0, <<>>, {:list, inner})
   end
@@ -46,6 +100,7 @@ defmodule Lobby.Protocol.Bincode do
       message: "Cannot serialize value #{inspect(value)} into type #{inspect(type)}"
   end
 
+  # String
   def deserialize(
         <<
           string_size::little-integer-size(64),
@@ -57,6 +112,7 @@ defmodule Lobby.Protocol.Bincode do
     {content, rest}
   end
 
+  # List
   def deserialize(<<size::little-integer-size(64), rest::binary>>, {:list, inner}) do
     deserialize(rest, size, [], {:list, inner})
   end
