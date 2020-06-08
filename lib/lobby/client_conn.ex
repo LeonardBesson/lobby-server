@@ -18,6 +18,15 @@ defmodule Lobby.ClientConn do
   @protocol_version Lobby.compile_env!(:protocol_version)
   @app_version Lobby.compile_env!(:app_version)
 
+  defmodule State do
+    defstruct conn: nil, flush_timer: nil
+
+    @type t :: %__MODULE__{
+            conn: Connection.t(),
+            flush_timer: reference
+          }
+  end
+
   @doc """
   Starts the handler with `:proc_lib.spawn_link/3`.
   """
@@ -57,62 +66,71 @@ defmodule Lobby.ClientConn do
 
     send_message(self(), packet_init)
 
-    :gen_server.enter_loop(__MODULE__, [], %{conn: conn})
+    :gen_server.enter_loop(__MODULE__, [], %State{conn: conn})
   end
 
   def send_message(client, message) do
     GenServer.cast(client, {:send_message, message})
   end
 
+  def schedule_flush(%State{flush_timer: flush_timer} = state) do
+    flush_timer =
+      if flush_timer == nil do
+        Logger.debug("Scheduling flush")
+        send(self(), :flush)
+        make_ref()
+      else
+        Logger.debug("Flush already scheduled")
+        flush_timer
+      end
+
+    %{state | flush_timer: flush_timer}
+  end
+
   @impl GenServer
-  def handle_cast({:send_message, message}, %{conn: conn} = state) do
-    Logger.info("Sending message: #{inspect(message)}")
+  def handle_cast({:send_message, message}, %State{conn: conn} = state) do
+    Logger.debug("Sending message: #{inspect(message)}")
     packet = message_to_packet(message)
     conn = Connection.send_packet(conn, packet)
-    send(self(), :flush)
+    state = schedule_flush(state)
 
     {:noreply, %{state | conn: conn}}
   end
 
   @impl GenServer
-  def handle_info({:tcp, _, message}, %{conn: conn} = state) do
-    Logger.info("Received #{inspect(message)} from #{conn.peername}")
+  def handle_info({:tcp, _, message}, %State{conn: conn} = state) do
+    Logger.debug("Received #{inspect(message)} from #{conn.peername}")
 
     conn = Connection.received(conn, message) |> Connection.continue_receiving()
 
-    # TODO: Instead of sending this all the time, we should
-    # schedule a flush at most every X ms using Process.send_after().
-    # That way we don't risk surcharging the mailbox with constant flush
-    # messages that have no effect (i.e if we send 2 packets in a row it will
-    # flush 2 times but the second one is useless.
-    # tickrate of 60 should be enough
-    send(self(), :flush)
+    state = schedule_flush(state)
 
     {:noreply, %{state | conn: conn}}
   end
 
   @impl GenServer
-  def handle_info({:tcp_closed, _}, %{conn: conn} = state) do
+  def handle_info({:tcp_closed, _}, %State{conn: conn} = state) do
     Logger.info("Peer #{conn.peername} disconnected")
 
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, _, reason}, %{conn: conn} = state) do
-    Logger.info("Error with peer #{conn.peername}: #{inspect(reason)}")
+  def handle_info({:tcp_error, _, reason}, %State{conn: conn} = state) do
+    Logger.error("Error with peer #{conn.peername}: #{inspect(reason)}")
 
     {:stop, :normal, state}
   end
 
-  def handle_info(:flush, %{conn: conn} = state) do
+  def handle_info(:flush, %State{conn: conn} = state) do
+    Logger.debug("Flushing")
     {incoming_packets, conn} = Connection.flush(conn)
     conn = Enum.reduce(incoming_packets, conn, &handle_incoming_packet/2)
 
-    {:noreply, %{state | conn: conn}}
+    {:noreply, %{state | conn: conn, flush_timer: nil}}
   end
 
   defp handle_incoming_packet(%Packet{} = packet, %Connection{} = conn) do
-    Logger.info("Received incoming packet #{inspect(packet)}")
+    Logger.debug("Received incoming packet #{inspect(packet)}")
 
     case packet.packet_type do
       :packet_init ->
