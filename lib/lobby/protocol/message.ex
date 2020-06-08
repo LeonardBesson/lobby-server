@@ -4,17 +4,15 @@ defprotocol Lobby.Protocol.Message do
   into packets.
   """
 
-  @type message :: any
-
   @doc """
   Returns the packet type associated with the message
   """
-  @spec packet_type(message) :: atom
+  @spec packet_type(t) :: atom
   def packet_type(message)
 
   @doc """
   Serialize the message into a binary
   """
-  @spec serialize(message) :: binary
+  @spec serialize(t) :: binary
   def serialize(message)
 end

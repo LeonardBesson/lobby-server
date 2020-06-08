@@ -10,7 +10,7 @@ defmodule PacketDecoderTest do
       encoder = PacketEncoder.add_packet(encoder, Packet.new(:packet_init, fill_binary(1, 25)))
       {buffer, _} = PacketEncoder.next_buffer(encoder)
       assert IO.iodata_length(buffer) == 3 + 25
-      assert(buffer == <<224, 0, 25, fill_binary(1, 25)::binary>>)
+      assert(buffer == <<224, 1, 25, fill_binary(1, 25)::binary>>)
 
       decoder = PacketDecoder.new()
       decoder = PacketDecoder.push_buffer(decoder, buffer)

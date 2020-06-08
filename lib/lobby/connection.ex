@@ -3,6 +3,7 @@ defmodule Lobby.Connection do
   Represents a physical TCP connection
   """
   alias Lobby.Protocol.Packet
+  alias Lobby.Protocol.BufferProcessor
   alias Lobby.Protocol.PacketDecoder
   alias Lobby.Protocol.PacketEncoder
   alias Lobby.Utils.Queue
@@ -13,6 +14,7 @@ defmodule Lobby.Connection do
             transport: nil,
             peername: nil,
             state: :initializing,
+            buffer_processors: [],
             tcp_encoder: PacketEncoder.new(8 * 1024),
             tcp_decoder: PacketDecoder.new(),
             unprocessed_out: Queue.new(),
@@ -27,6 +29,7 @@ defmodule Lobby.Connection do
           transport: module(),
           peername: String.t(),
           state: state(),
+          buffer_processors: list(list(BufferProcessor.t())),
           tcp_encoder: PacketEncoder.t(),
           tcp_decoder: PacketDecoder.t(),
           unprocessed_out: Queue.t(binary),
@@ -39,14 +42,22 @@ defmodule Lobby.Connection do
     %__MODULE__{socket: socket, transport: transport, peername: peername}
   end
 
+  def add_buffer_processor(
+        %__MODULE__{buffer_processors: buffer_processors} = conn,
+        buffer_processor
+      ) do
+    buffer_processors = [buffer_processor | buffer_processors]
+    %{conn | buffer_processors: buffer_processors}
+  end
+
   def continue_receiving(%__MODULE__{socket: socket, transport: transport} = conn) do
     transport.setopts(socket, active: :once)
     conn
   end
 
-  def received(%__MODULE__{tcp_decoder: tcp_decoder} = conn, message) do
-    tcp_decoder = PacketDecoder.push_buffer(tcp_decoder, message)
-    %{conn | tcp_decoder: tcp_decoder}
+  def received(%__MODULE__{unprocessed_in: unprocessed_in} = conn, message) do
+    unprocessed_in = Queue.push_back(unprocessed_in, message)
+    %{conn | unprocessed_in: unprocessed_in}
   end
 
   def send_packet(%__MODULE__{tcp_encoder: tcp_encoder} = conn, %Packet{} = packet) do
@@ -98,6 +109,7 @@ defmodule Lobby.Connection do
     if buffer == nil do
       %{conn | unprocessed_out: unprocessed_out}
     else
+      {buffer, conn} = apply_buffer_processors(conn, buffer, :out)
       processed_out = Queue.push_back(processed_out, buffer)
       process_out(%{conn | unprocessed_out: unprocessed_out, processed_out: processed_out})
     end
@@ -110,9 +122,38 @@ defmodule Lobby.Connection do
     if buffer == nil do
       %{conn | unprocessed_in: unprocessed_in}
     else
+      {buffer, conn} = apply_buffer_processors(conn, buffer, :in)
       processed_in = Queue.push_back(processed_in, buffer)
       process_out(%{conn | unprocessed_in: unprocessed_in, processed_in: processed_in})
     end
+  end
+
+  defp apply_buffer_processors(
+         %__MODULE__{buffer_processors: buffer_processors} = conn,
+         buffer,
+         direction
+       ) do
+    # Processors are applied backwards inbound and forward outbound.
+    # They are prepended when inserted that's why we reverse them for out instead of in
+    get_processors = fn processors ->
+      case direction do
+        :in -> processors
+        :out -> Enum.reverse(processors)
+      end
+    end
+
+    processors = get_processors.(buffer_processors)
+
+    {processors, buffer} =
+      Enum.map_reduce(processors, buffer, fn processor, buffer ->
+        {buffer, processor} = BufferProcessor.process(processor, buffer, direction)
+
+        {processor, buffer}
+      end)
+
+    # Reverse back to original order
+    processors = get_processors.(processors)
+    {buffer, %{conn | buffer_processors: processors}}
   end
 
   def write_outgoing_packets(

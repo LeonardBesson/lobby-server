@@ -89,6 +89,7 @@ defmodule Lobby.Protocol.PacketUtils do
     end
   end
 
+  @spec message_to_packet(Message.t()) :: Packet.t()
   def message_to_packet(message) do
     packet_type = Message.packet_type(message)
     packet_data = Message.serialize(message)

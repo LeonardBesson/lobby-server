@@ -1,6 +1,7 @@
 defmodule Lobby.ClientConn do
   @moduledoc """
-  A simple TCP protocol handler that echoes all messages received.
+  The process handling the client connection. It is the entry point for which messages
+  are sent to and receiving from a client.
   """
   use GenServer
   require Lobby
@@ -9,6 +10,7 @@ defmodule Lobby.ClientConn do
   import Lobby.Protocol.PacketUtils
   alias Lobby.Messages.PacketInit
   alias Lobby.Messages.FatalError
+  alias Lobby.BufferProcessors.LogBufferProcessor
   require Logger
 
   @behaviour :ranch_protocol
@@ -43,7 +45,9 @@ defmodule Lobby.ClientConn do
 
     Logger.info("Peer #{peername} connecting")
 
-    conn = Connection.new(socket, transport, peername)
+    conn =
+      Connection.new(socket, transport, peername)
+      |> Connection.add_buffer_processor(%LogBufferProcessor{})
 
     # Init handshake
     packet_init = %PacketInit{
@@ -71,10 +75,7 @@ defmodule Lobby.ClientConn do
   end
 
   @impl GenServer
-  def handle_info(
-        {:tcp, _, message},
-        %{conn: conn} = state
-      ) do
+  def handle_info({:tcp, _, message}, %{conn: conn} = state) do
     Logger.info("Received #{inspect(message)} from #{conn.peername}")
 
     conn = Connection.received(conn, message) |> Connection.continue_receiving()
