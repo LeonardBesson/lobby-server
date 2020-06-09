@@ -69,6 +69,43 @@ defmodule Lobby.Protocol.Bincode do
     end
   end
 
+  max_tuple_size = Application.get_env(:bincode, :max_tuple_size) || 12
+  # Tuple
+  for size <- 1..max_tuple_size do
+    type_variables =
+      for i <- 1..size do
+        field_type = String.to_atom("tuple_type_#{i}")
+        quote do: var!(unquote(Macro.var(field_type, nil)))
+      end
+
+    value_variables =
+      for i <- 1..size do
+        field_value = String.to_atom("tuple_field_#{i}")
+        quote do: var!(unquote(Macro.var(field_value, nil)))
+      end
+
+    serialize_quoted_field =
+      for {type_var, value_var} <- Enum.zip(type_variables, value_variables) do
+        quote do: <<serialize(unquote(value_var), unquote(type_var))::binary>>
+      end
+
+    deserialize_quoted_fields =
+      for {type_var, value_var} <- Enum.zip(type_variables, value_variables) do
+        quote do
+          {unquote(value_var), var!(rest)} = deserialize(var!(rest), unquote(type_var))
+        end
+      end
+
+    def serialize({unquote_splicing(value_variables)}, {unquote_splicing(type_variables)}) do
+      <<unquote_splicing(serialize_quoted_field)>>
+    end
+
+    def deserialize(<<var!(rest)::binary>>, {unquote_splicing(type_variables)}) do
+      unquote_splicing(deserialize_quoted_fields)
+      {unquote_splicing(value_variables)}
+    end
+  end
+
   # String
   def serialize(value, :string) do
     <<
@@ -82,14 +119,14 @@ defmodule Lobby.Protocol.Bincode do
     serialize(list, 0, <<>>, {:list, inner})
   end
 
-  def serialize([], length, result, {:list, inner}) do
+  defp serialize([], length, result, {:list, inner}) do
     <<
       length::little-integer-size(64),
       IO.iodata_to_binary(result)::binary
     >>
   end
 
-  def serialize([head | tail], length, result, {:list, inner}) do
+  defp serialize([head | tail], length, result, {:list, inner}) do
     serialized = serialize(head, inner)
     result = [result, serialized]
 
@@ -101,14 +138,14 @@ defmodule Lobby.Protocol.Bincode do
     serialize(map, Map.keys(map), 0, <<>>, {:map, {key_type, value_type}})
   end
 
-  def serialize(map, [], length, result, {:map, {key_type, value_type}}) do
+  defp serialize(map, [], length, result, {:map, {key_type, value_type}}) do
     <<
       length::little-integer-size(64),
       IO.iodata_to_binary(result)::binary
     >>
   end
 
-  def serialize(map, [key | keys], length, result, {:map, {key_type, value_type}}) do
+  defp serialize(map, [key | keys], length, result, {:map, {key_type, value_type}}) do
     serialized_key = serialize(key, key_type)
     serialized_value = serialize(map[key], value_type)
     result = [result, serialized_key, serialized_value]
@@ -152,12 +189,12 @@ defmodule Lobby.Protocol.Bincode do
     deserialize(rest, size, [], {:list, inner})
   end
 
-  def deserialize(rest, 0, result, {:list, _}) do
+  defp deserialize(rest, 0, result, {:list, _}) do
     result = Enum.reverse(result)
     {result, rest}
   end
 
-  def deserialize(rest, remaining, result, {:list, inner}) do
+  defp deserialize(rest, remaining, result, {:list, inner}) do
     {deserialized, rest} = deserialize(rest, inner)
     result = [deserialized | result]
 
@@ -169,11 +206,11 @@ defmodule Lobby.Protocol.Bincode do
     deserialize(rest, size, %{}, {:map, {key_type, value_type}})
   end
 
-  def deserialize(rest, 0, result, {:map, {_, _}}) do
+  defp deserialize(rest, 0, result, {:map, {_, _}}) do
     {result, rest}
   end
 
-  def deserialize(rest, remaining, result, {:map, {key_type, value_type}}) do
+  defp deserialize(rest, remaining, result, {:map, {key_type, value_type}}) do
     {deserialized_key, rest} = deserialize(rest, key_type)
     {deserialized_value, rest} = deserialize(rest, value_type)
 
