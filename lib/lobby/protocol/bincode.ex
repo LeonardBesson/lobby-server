@@ -116,6 +116,20 @@ defmodule Lobby.Protocol.Bincode do
     serialize(map, keys, length + 1, result, {:map, {key_type, value_type}})
   end
 
+  # Set
+  def serialize(%MapSet{} = set, {:set, inner}) do
+    serialize(MapSet.to_list(set), {:list, inner})
+  end
+
+  # Option
+  def serialize(nil, {:option, _}) do
+    <<0>>
+  end
+
+  def serialize(value, {:option, inner}) do
+    <<1::size(8), serialize(value, inner)::binary>>
+  end
+
   def serialize(value, type) do
     raise ArgumentError,
       message: "Cannot serialize value #{inspect(value)} into type #{inspect(type)}"
@@ -166,6 +180,21 @@ defmodule Lobby.Protocol.Bincode do
     result = Map.put(result, deserialized_key, deserialized_value)
 
     deserialize(rest, remaining - 1, result, {:map, {key_type, value_type}})
+  end
+
+  # Set
+  def deserialize(<<rest::binary>>, {:set, inner}) do
+    {list, rest} = deserialize(rest, {:list, inner})
+    {MapSet.new(list), rest}
+  end
+
+  # Option
+  def deserialize(<<0::size(8), rest::binary>>, {:option, _}) do
+    {nil, rest}
+  end
+
+  def deserialize(<<1::size(8), rest::binary>>, {:option, inner}) do
+    deserialize(rest, inner)
   end
 
   def deserialize(value, type) do
