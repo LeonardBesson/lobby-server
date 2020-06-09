@@ -78,8 +78,8 @@ defmodule Lobby.Protocol.Bincode do
   end
 
   # List
-  def serialize(value, {:list, inner}) when is_list(value) do
-    serialize(value, 0, <<>>, {:list, inner})
+  def serialize(list, {:list, inner}) when is_list(list) do
+    serialize(list, 0, <<>>, {:list, inner})
   end
 
   def serialize([], length, result, {:list, inner}) do
@@ -92,7 +92,28 @@ defmodule Lobby.Protocol.Bincode do
   def serialize([head | tail], length, result, {:list, inner}) do
     serialized = serialize(head, inner)
     result = [result, serialized]
+
     serialize(tail, length + 1, result, {:list, inner})
+  end
+
+  # Map
+  def serialize(map, {:map, {key_type, value_type}}) when is_map(map) do
+    serialize(map, Map.keys(map), 0, <<>>, {:map, {key_type, value_type}})
+  end
+
+  def serialize(map, [], length, result, {:map, {key_type, value_type}}) do
+    <<
+      length::little-integer-size(64),
+      IO.iodata_to_binary(result)::binary
+    >>
+  end
+
+  def serialize(map, [key | keys], length, result, {:map, {key_type, value_type}}) do
+    serialized_key = serialize(key, key_type)
+    serialized_value = serialize(map[key], value_type)
+    result = [result, serialized_key, serialized_value]
+
+    serialize(map, keys, length + 1, result, {:map, {key_type, value_type}})
   end
 
   def serialize(value, type) do
@@ -117,7 +138,7 @@ defmodule Lobby.Protocol.Bincode do
     deserialize(rest, size, [], {:list, inner})
   end
 
-  def deserialize(rest, 0, result, {:list, inner}) do
+  def deserialize(rest, 0, result, {:list, _}) do
     result = Enum.reverse(result)
     {result, rest}
   end
@@ -127,6 +148,24 @@ defmodule Lobby.Protocol.Bincode do
     result = [deserialized | result]
 
     deserialize(rest, remaining - 1, result, {:list, inner})
+  end
+
+  # Map
+  def deserialize(<<size::little-integer-size(64), rest::binary>>, {:map, {key_type, value_type}}) do
+    deserialize(rest, size, %{}, {:map, {key_type, value_type}})
+  end
+
+  def deserialize(rest, 0, result, {:map, {_, _}}) do
+    {result, rest}
+  end
+
+  def deserialize(rest, remaining, result, {:map, {key_type, value_type}}) do
+    {deserialized_key, rest} = deserialize(rest, key_type)
+    {deserialized_value, rest} = deserialize(rest, value_type)
+
+    result = Map.put(result, deserialized_key, deserialized_value)
+
+    deserialize(rest, remaining - 1, result, {:map, {key_type, value_type}})
   end
 
   def deserialize(value, type) do

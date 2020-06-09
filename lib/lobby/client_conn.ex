@@ -9,6 +9,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Protocol.Packet
   import Lobby.Protocol.PacketUtils
   alias Lobby.Messages.PacketInit
+  alias Lobby.Messages.PacketTest
   alias Lobby.Messages.FatalError
   alias Lobby.BufferProcessors.LogBufferProcessor
   require Logger
@@ -150,6 +151,11 @@ defmodule Lobby.ClientConn do
       :fatal_error ->
         msg = FatalError.deserialize(packet.data)
         Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
+        conn
+
+      :packet_test ->
+        msg = PacketTest.deserialize(packet.data)
+        Logger.debug("PacketTest received: #{inspect(msg)}")
         conn
 
       type ->
