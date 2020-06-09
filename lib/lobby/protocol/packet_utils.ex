@@ -66,7 +66,7 @@ defmodule Lobby.Protocol.PacketUtils do
         defmodule unquote(message_module) do
           defstruct unquote(struct_data)
 
-          def serialize(%unquote(message_module){} = var!(message)) do
+          def serialize(%__MODULE__{} = var!(message)) do
             <<unquote_splicing(serialize_quoted_fields)>>
           end
 

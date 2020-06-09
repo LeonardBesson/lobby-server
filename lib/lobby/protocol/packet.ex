@@ -23,7 +23,7 @@ defmodule Lobby.Protocol.Packet do
          some_map: {:map, {:u32, :string}},
          some_set: {:set, :string},
          some_option: {:option, :string},
-         some_tuple: {:u32, :u32}
+         some_tuple: {:u32, :u32},
        ]}
   )
 
