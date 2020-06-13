@@ -7,7 +7,7 @@ defmodule Lobby.ClientConn do
   require Lobby
   alias Lobby.Connection
   alias Lobby.Protocol.Packet
-  import Lobby.Protocol.PacketUtils
+  import Lobby.Protocol.Utils
   alias Lobby.Messages.PacketInit
   alias Lobby.Messages.PacketTest
   alias Lobby.Messages.FatalError
@@ -91,7 +91,7 @@ defmodule Lobby.ClientConn do
   @impl GenServer
   def handle_cast({:send_message, message}, %State{conn: conn} = state) do
     Logger.debug("Sending message: #{inspect(message)}")
-    packet = message_to_packet(message)
+    packet = message_to_packet!(message)
     conn = Connection.send_packet(conn, packet)
     state = schedule_flush(state)
 
@@ -135,7 +135,7 @@ defmodule Lobby.ClientConn do
 
     case packet.packet_type do
       :packet_init ->
-        msg = PacketInit.deserialize(packet.data)
+        msg = packet_to_message!(packet, PacketInit)
 
         cond do
           msg.protocol_version != @protocol_version ->
@@ -149,12 +149,12 @@ defmodule Lobby.ClientConn do
         end
 
       :fatal_error ->
-        msg = FatalError.deserialize(packet.data)
+        msg = packet_to_message!(packet, FatalError)
         Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
         conn
 
       :packet_test ->
-        msg = PacketTest.deserialize(packet.data)
+        msg = packet_to_message!(packet, PacketTest)
         Logger.debug("PacketTest received: #{inspect(msg)}")
         conn
 

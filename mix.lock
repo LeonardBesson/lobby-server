@@ -1,3 +1,4 @@
 %{
+  "bincode": {:hex, :bincode, "0.2.0", "f4421bc1472a785e5c638f5b124ea56bc7d6e1d579350ab7d95b6d6027e80223", [:mix], [], "hexpm", "b002bd68a889321c6bc71dfbd418f3c176a109b831d246d7b16e02dbe09354d1"},
   "ranch": {:hex, :ranch, "2.0.0-rc.2", "48b4d36d1034b99724327c3ba12a76a0781a0792a8aa51f91de3e541c2f3aa73", [:rebar3], [], "hexpm", "c30b6712e75960e7ba000773af4330076ff83da915f08db6486f5bbc00143b15"},
 }

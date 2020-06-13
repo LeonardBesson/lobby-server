@@ -22,7 +22,8 @@ defmodule Lobby.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:ranch, "~> 2.0.0-rc.2"}
+      {:ranch, "~> 2.0.0-rc.2"},
+      {:bincode, "~> 0.2"}
     ]
   end
 end
