@@ -5,6 +5,7 @@ defmodule Lobby.Application do
 
   def start(_type, _args) do
     children = [
+      Lobby.Repo,
       :ranch.child_spec(
         :network,
         :ranch_tcp,

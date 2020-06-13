@@ -7,6 +7,7 @@ defmodule Lobby.MixProject do
       version: "0.1.0",
       elixir: "~> 1.10",
       start_permanent: Mix.env() == :prod,
+      aliases: aliases(),
       deps: deps()
     ]
   end
@@ -23,7 +24,16 @@ defmodule Lobby.MixProject do
   defp deps do
     [
       {:ranch, "~> 2.0.0-rc.2"},
-      {:bincode, "~> 0.2"}
+      {:bincode, "~> 0.2"},
+      {:ecto_sql, "~> 3.0"},
+      {:postgrex, ">= 0.0.0"},
+      {:bcrypt_elixir, "~> 2.2"}
+    ]
+  end
+
+  defp aliases do
+    [
+      "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"]
     ]
   end
 end
