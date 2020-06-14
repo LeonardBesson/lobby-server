@@ -2,11 +2,16 @@
 
 Central game lobby server written in Elixir
 
-## Features
+* Compact binary protocol based on [Bincode](https://github.com/LeonardBesson/bincode).
+* Postgres for relational and persistent data.
+* Mnesia for ephemeral data and caching.
 
-* Client authentication
-* Lobbies
-* Friend lists
-* Group and private chat
-* Server browsing
-* Matchmaking
+## Planned Features
+
+- [ ] Client authentication
+- [ ] Lobbies
+- [ ] Friend lists
+- [ ] Group and private chat
+- [ ] Server browsing
+- [ ] Matchmaking
+- [ ] Clustering
