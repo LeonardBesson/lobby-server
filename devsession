@@ -1,0 +1,3 @@
+#!/bin/bash
+
+docker exec -it lobby_lobby_1 iex -S mix

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# Fetch dependencies
+HEX_HTTP_TIMEOUT=5000 mix deps.get
+
+# Migrate and seed DB
+mix ecto.setup
+
+# Now jsut prevent the container from exiting.
+# Dev sessions are started with the "devsession" script.
+tail -f /dev/null

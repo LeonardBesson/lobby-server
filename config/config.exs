@@ -15,5 +15,5 @@ config :lobby, Lobby.Repo,
   database: "lobby",
   username: "postgres",
   password: "postgres",
-  hostname: "localhost",
+  hostname: "postgres",
   port: "5432"

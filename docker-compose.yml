@@ -1,0 +1,21 @@
+version: "3.7"
+
+services:
+  lobby:
+    build: .
+    ports:
+      - 9000:9000
+    volumes:
+      - .:/app
+    command: ./run_lobby
+    stdin_open: true
+    tty: true
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:12
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_PASSWORD=postgres
