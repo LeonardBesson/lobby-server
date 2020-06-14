@@ -19,12 +19,16 @@ defmodule Lobby.ClientConn do
   @protocol_version Lobby.compile_env!(:protocol_version)
   @app_version Lobby.compile_env!(:app_version)
 
+  @auth_timeout_millis 2 * 60_000
+  @disconnect_delay_millis 100
+
   defmodule State do
-    defstruct conn: nil, flush_timer: nil
+    defstruct conn: nil, flush_timer: nil, auth_timeout_timer: nil
 
     @type t :: %__MODULE__{
             conn: Connection.t(),
-            flush_timer: reference
+            flush_timer: reference,
+            auth_timeout_timer: reference
           }
   end
 
@@ -67,7 +71,12 @@ defmodule Lobby.ClientConn do
 
     send_message(self(), packet_init)
 
-    :gen_server.enter_loop(__MODULE__, [], %State{conn: conn})
+    auth_timeout_timer = Process.send_after(self(), :auth_timeout, @auth_timeout_millis)
+
+    :gen_server.enter_loop(__MODULE__, [], %State{
+      conn: conn,
+      auth_timeout_timer: auth_timeout_timer
+    })
   end
 
   def send_message(client, message) do
@@ -130,6 +139,19 @@ defmodule Lobby.ClientConn do
     {:noreply, %{state | conn: conn, flush_timer: nil}}
   end
 
+  def handle_info(:auth_timeout, %State{conn: conn} = state) do
+    Logger.warn("Auth timed out for peer #{conn.peername}")
+    conn = disconnect(conn, "Authentication timed out")
+
+    {:noreply, %{state | conn: conn}}
+  end
+
+  def handle_info(:close, %State{conn: conn} = state) do
+    conn = Connection.shutdown(conn)
+
+    {:stop, :normal, %{state | conn: conn}}
+  end
+
   defp handle_incoming_packet(%Packet{} = packet, %Connection{} = conn) do
     Logger.debug("Received incoming packet #{inspect(packet)}")
 
@@ -166,9 +188,10 @@ defmodule Lobby.ClientConn do
 
   defp disconnect(conn, error_message) when is_binary(error_message) do
     message = %FatalError{message: error_message}
-    conn = Connection.send_packet(conn, message_to_packet(message))
+    conn = Connection.send_packet(conn, message_to_packet!(message))
     {_, conn} = Connection.flush(conn)
-    Connection.shutdown(conn)
+    Process.send_after(self(), :close, @disconnect_delay_millis)
+    conn
   end
 
   defp stringify_peername(socket) do
