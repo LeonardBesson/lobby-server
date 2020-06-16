@@ -19,7 +19,9 @@ defmodule Lobby.Protocol.Packet do
     packet_init: {1, [protocol_version: :u16, app_version: :u16]},
     authentication_request: {2, [email: :string, password: :string]},
     authentication_response:
-      {3, [error_code: {:option, :string}, session_token: {:option, :string}]}
+      {3, [error_code: {:option, :string}, session_token: {:option, :string}]},
+    packet_ping: {4, [id: :string, peer_time: :u64]},
+    packet_pong: {5, [id: :string, peer_time: :u64]}
   )
 
   @flag_fixed_header 1 <<< 7

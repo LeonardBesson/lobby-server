@@ -11,6 +11,8 @@ defmodule Lobby.ClientConn do
   alias Lobby.Protocol.Packet
   import Lobby.Protocol.Utils
   alias Lobby.Messages.PacketInit
+  alias Lobby.Messages.PacketPing
+  alias Lobby.Messages.PacketPong
   alias Lobby.Messages.FatalError
   alias Lobby.Messages.AuthenticationRequest
   alias Lobby.Messages.AuthenticationResponse
@@ -23,16 +25,29 @@ defmodule Lobby.ClientConn do
   @protocol_version Lobby.compile_env!(:protocol_version)
   @app_version Lobby.compile_env!(:app_version)
 
-  @auth_timeout_millis 2 * 60_000
-  @disconnect_delay_millis 100
+  @auth_timeout_millis Lobby.compile_env!(:auth_timeout_millis)
+  @disconnect_delay_millis Lobby.compile_env!(:disconnect_delay_millis)
+  @ping_interval_millis Lobby.compile_env!(:ping_interval_millis)
+  @ping_timeout_millis Lobby.compile_env!(:ping_timeout_millis)
+  @round_trip_threshold_warning_millis Lobby.compile_env!(:round_trip_threshold_warning_millis)
 
   defmodule State do
-    defstruct conn: nil, flush_timer: nil, auth_timeout_timer: nil
+    defstruct conn: nil,
+              flush_timer: nil,
+              auth_timeout_timer: nil,
+              ping_timer: nil,
+              last_ping_id: nil,
+              last_ping_time: nil,
+              round_trip_ms: nil
 
     @type t :: %__MODULE__{
             conn: Connection.t(),
             flush_timer: reference,
-            auth_timeout_timer: reference
+            auth_timeout_timer: reference,
+            ping_timer: reference,
+            last_ping_id: String.t(),
+            last_ping_time: DateTime.t(),
+            round_trip_ms: non_neg_integer
           }
   end
 
@@ -144,6 +159,28 @@ defmodule Lobby.ClientConn do
     {:noreply, %{state | flush_timer: nil}}
   end
 
+  def handle_info(:ping_client, %State{conn: conn} = state) do
+    Logger.debug("Ping triggered")
+
+    if state.last_ping_id != nil do
+      elapsed_millis = DateTime.diff(DateTime.utc_now(), state.last_ping_time, :millisecond)
+
+      if elapsed_millis > @ping_timeout_millis do
+        state = disconnect(state, "Timeout")
+        {:noreply, state}
+      else
+        ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
+        {:noreply, %{state | ping_timer: ping_timer}}
+      end
+    else
+      now = DateTime.utc_now()
+      id = Ecto.UUID.generate()
+      send_message(self(), %PacketPing{id: id, peer_time: DateTime.to_unix(now, :millisecond)})
+      ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
+      {:noreply, %{state | ping_timer: ping_timer, last_ping_id: id, last_ping_time: now}}
+    end
+  end
+
   def handle_info(:auth_timeout, %State{conn: conn} = state) do
     Logger.warn("Auth timed out for peer #{conn.peername}")
     state = disconnect(state, "Authentication timed out")
@@ -181,6 +218,23 @@ defmodule Lobby.ClientConn do
         Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
         state
 
+      :packet_pong ->
+        msg = packet_to_message!(packet, PacketPong)
+
+        if msg.id != state.last_ping_id do
+          Logger.error("Ping/Pong ID mismatch")
+          state
+        else
+          now = DateTime.utc_now()
+          round_trip = DateTime.diff(now, state.last_ping_time, :millisecond)
+
+          if round_trip > @round_trip_threshold_warning_millis do
+            Logger.warn("Round trip threshold exceeded: #{round_trip} ms")
+          end
+
+          %{state | round_trip_ms: round_trip, last_ping_id: nil}
+        end
+
       :authentication_request ->
         msg = packet_to_message!(packet, AuthenticationRequest)
 
@@ -191,8 +245,13 @@ defmodule Lobby.ClientConn do
             case Accounts.authenticate(msg.email, msg.password) do
               {:ok, %User{} = user} ->
                 conn = %{conn | state: :running}
-                Process.cancel_timer(state.auth_timeout_timer)
-                state = %{state | auth_timeout_timer: nil}
+
+                if state.auth_timeout_timer != nil do
+                  Process.cancel_timer(state.auth_timeout_timer)
+                end
+
+                ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
+                state = %{state | conn: conn, auth_timeout_timer: nil, ping_timer: ping_timer}
                 {%AuthenticationResponse{session_token: Crypto.gen_session_token()}, state}
 
               {:error, _} ->
