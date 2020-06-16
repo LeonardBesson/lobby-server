@@ -16,7 +16,10 @@ defmodule Lobby.Protocol.Packet do
 
   declare_packets(
     fatal_error: {0, [message: :string]},
-    packet_init: {1, [protocol_version: :u16, app_version: :u16]}
+    packet_init: {1, [protocol_version: :u16, app_version: :u16]},
+    authentication_request: {2, [email: :string, password: :string]},
+    authentication_response:
+      {3, [error_code: {:option, :string}, session_token: {:option, :string}]}
   )
 
   @flag_fixed_header 1 <<< 7

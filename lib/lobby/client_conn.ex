@@ -5,13 +5,17 @@ defmodule Lobby.ClientConn do
   """
   use GenServer
   require Lobby
+  alias Lobby.Accounts
+  alias Lobby.Accounts.User
   alias Lobby.Connection
   alias Lobby.Protocol.Packet
   import Lobby.Protocol.Utils
   alias Lobby.Messages.PacketInit
-  alias Lobby.Messages.PacketTest
   alias Lobby.Messages.FatalError
+  alias Lobby.Messages.AuthenticationRequest
+  alias Lobby.Messages.AuthenticationResponse
   alias Lobby.BufferProcessors.LogBufferProcessor
+  alias Lobby.Utils.Crypto
   require Logger
 
   @behaviour :ranch_protocol
@@ -134,16 +138,17 @@ defmodule Lobby.ClientConn do
   def handle_info(:flush, %State{conn: conn} = state) do
     Logger.debug("Flushing")
     {incoming_packets, conn} = Connection.flush(conn)
-    conn = Enum.reduce(incoming_packets, conn, &handle_incoming_packet/2)
+    state = %{state | conn: conn}
+    state = Enum.reduce(incoming_packets, state, &handle_incoming_packet/2)
 
-    {:noreply, %{state | conn: conn, flush_timer: nil}}
+    {:noreply, %{state | flush_timer: nil}}
   end
 
   def handle_info(:auth_timeout, %State{conn: conn} = state) do
     Logger.warn("Auth timed out for peer #{conn.peername}")
-    conn = disconnect(conn, "Authentication timed out")
+    state = disconnect(state, "Authentication timed out")
 
-    {:noreply, %{state | conn: conn}}
+    {:noreply, state}
   end
 
   def handle_info(:close, %State{conn: conn} = state) do
@@ -152,7 +157,7 @@ defmodule Lobby.ClientConn do
     {:stop, :normal, %{state | conn: conn}}
   end
 
-  defp handle_incoming_packet(%Packet{} = packet, %Connection{} = conn) do
+  defp handle_incoming_packet(%Packet{} = packet, %State{conn: conn} = state) do
     Logger.debug("Received incoming packet #{inspect(packet)}")
 
     case packet.packet_type do
@@ -161,37 +166,55 @@ defmodule Lobby.ClientConn do
 
         cond do
           msg.protocol_version != @protocol_version ->
-            disconnect(conn, "Invalid protocol version #{msg.protocol_version}")
+            disconnect(state, "Invalid protocol version #{msg.protocol_version}")
 
           msg.app_version != @app_version ->
-            disconnect(conn, "Invalid application version #{msg.protocol_version}")
+            disconnect(state, "Invalid application version #{msg.protocol_version}")
 
           true ->
-            conn
+            conn = %{conn | state: :authenticating}
+            %{state | conn: conn}
         end
 
       :fatal_error ->
         msg = packet_to_message!(packet, FatalError)
         Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
-        conn
+        state
 
-      :packet_test ->
-        msg = packet_to_message!(packet, PacketTest)
-        Logger.debug("PacketTest received: #{inspect(msg)}")
-        conn
+      :authentication_request ->
+        msg = packet_to_message!(packet, AuthenticationRequest)
+
+        if conn.state != :authenticating do
+          disconnect(state, "Packets out of order")
+        else
+          {response, state} =
+            case Accounts.authenticate(msg.email, msg.password) do
+              {:ok, %User{} = user} ->
+                conn = %{conn | state: :running}
+                Process.cancel_timer(state.auth_timeout_timer)
+                state = %{state | auth_timeout_timer: nil}
+                {%AuthenticationResponse{session_token: Crypto.gen_session_token()}, state}
+
+              {:error, _} ->
+                {%AuthenticationResponse{error_code: "invalid_credentials"}, state}
+            end
+
+          send_message(self(), response)
+          state
+        end
 
       type ->
         Logger.error("Unknown packet type #{type}")
-        conn
+        state
     end
   end
 
-  defp disconnect(conn, error_message) when is_binary(error_message) do
+  defp disconnect(%State{conn: conn} = state, error_message) when is_binary(error_message) do
     message = %FatalError{message: error_message}
     conn = Connection.send_packet(conn, message_to_packet!(message))
     {_, conn} = Connection.flush(conn)
     Process.send_after(self(), :close, @disconnect_delay_millis)
-    conn
+    %{state | conn: conn}
   end
 
   defp stringify_peername(socket) do

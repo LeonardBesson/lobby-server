@@ -4,6 +4,24 @@ defmodule Lobby.Accounts do
   alias Lobby.Accounts.User
   alias Lobby.Repo
 
+  def authenticate(email, password) do
+    case get_by_email(email) do
+      %User{} = user ->
+        if Bcrypt.verify_pass(password, user.password_hash) do
+          {:ok, user}
+        else
+          {:error, :invalid_credentials}
+        end
+
+      nil ->
+        {:error, :not_found}
+    end
+  end
+
+  def get_by_email(email) do
+    Repo.get_by(User, email: email)
+  end
+
   def create_user(attrs \\ %{}) do
     %User{}
     |> User.changeset(attrs)

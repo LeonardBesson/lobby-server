@@ -17,3 +17,6 @@ config :lobby, Lobby.Repo,
   password: "postgres",
   hostname: "postgres",
   port: "5432"
+
+config :lobby,
+  session_token_bytes: 16
