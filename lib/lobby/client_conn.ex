@@ -7,6 +7,7 @@ defmodule Lobby.ClientConn do
   require Lobby
   alias Lobby.Accounts
   alias Lobby.Accounts.User
+  alias Lobby.Bans
   alias Lobby.Connection
   alias Lobby.Protocol.Packet
   import Lobby.Protocol.Structs
@@ -31,6 +32,7 @@ defmodule Lobby.ClientConn do
   @ping_interval_millis Lobby.compile_env!(:ping_interval_millis)
   @ping_timeout_millis Lobby.compile_env!(:ping_timeout_millis)
   @round_trip_threshold_warning_millis Lobby.compile_env!(:round_trip_threshold_warning_millis)
+  @reveal_ban_reason Lobby.compile_env!(:reveal_ban_reason)
 
   defmodule State do
     defstruct conn: nil,
@@ -242,29 +244,38 @@ defmodule Lobby.ClientConn do
         if conn.state != :authenticating do
           disconnect(state, "Packets out of order")
         else
-          {response, state} =
-            case Accounts.authenticate(msg.email, msg.password) do
-              {:ok, %User{} = user} ->
-                conn = %{conn | state: :running}
+          case Accounts.authenticate(msg.email, msg.password) do
+            {:ok, %User{} = user} ->
+              case Bans.validate(user) do
+                {:banned, reason, expire_at} ->
+                  ban_message = if @reveal_ban_reason do
+                    "Banned until #{expire_at}.\n#{reason}"
+                  else
+                    "Banned until #{expire_at}"
+                  end
+                  disconnect(state, ban_message)
 
-                if state.auth_timeout_timer != nil do
-                  Process.cancel_timer(state.auth_timeout_timer)
-                end
+                :valid ->
+                  conn = %{conn | state: :running}
 
-                ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
-                state = %{state | conn: conn, auth_timeout_timer: nil, ping_timer: ping_timer}
+                  if state.auth_timeout_timer != nil do
+                    Process.cancel_timer(state.auth_timeout_timer)
+                  end
 
-                {%AuthenticationResponse{
-                   session_token: Crypto.gen_session_token(),
-                   user_profile: get_user_profile(user)
-                 }, state}
+                  ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
+                  state = %{state | conn: conn, auth_timeout_timer: nil, ping_timer: ping_timer}
 
-              {:error, _} ->
-                {%AuthenticationResponse{error_code: "invalid_credentials"}, state}
-            end
+                  send_message(self(), %AuthenticationResponse{
+                    session_token: Crypto.gen_session_token(),
+                    user_profile: get_user_profile(user)
+                  })
+                  state
+              end
 
-          send_message(self(), response)
-          state
+            {:error, _} ->
+              send_message(self(), %AuthenticationResponse{error_code: "invalid_credentials"})
+              state
+          end
         end
 
       type ->
