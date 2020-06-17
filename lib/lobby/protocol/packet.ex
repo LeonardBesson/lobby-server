@@ -5,6 +5,7 @@ defmodule Lobby.Protocol.Packet do
   use Bitwise
   import Bincode
   import Lobby.Protocol.PacketDefinition
+  alias Lobby.UserProfile
 
   defstruct flags: 0, packet_type: 0, data: <<>>
 
@@ -19,7 +20,12 @@ defmodule Lobby.Protocol.Packet do
     packet_init: {1, [protocol_version: :u16, app_version: :u16]},
     authentication_request: {2, [email: :string, password: :string]},
     authentication_response:
-      {3, [error_code: {:option, :string}, session_token: {:option, :string}]},
+      {3,
+       [
+         error_code: {:option, :string},
+         session_token: {:option, :string},
+         user_profile: {:option, UserProfile}
+       ]},
     packet_ping: {4, [id: :string, peer_time: :u64]},
     packet_pong: {5, [id: :string, peer_time: :u64]}
   )

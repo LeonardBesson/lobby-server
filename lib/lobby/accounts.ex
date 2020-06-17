@@ -8,7 +8,7 @@ defmodule Lobby.Accounts do
     case get_by_email(email) do
       %User{} = user ->
         if Bcrypt.verify_pass(password, user.password_hash) do
-          {:ok, user}
+          {:ok, user |> Repo.preload(:profile)}
         else
           {:error, :invalid_credentials}
         end

@@ -9,6 +9,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Accounts.User
   alias Lobby.Connection
   alias Lobby.Protocol.Packet
+  import Lobby.Protocol.Structs
   import Lobby.Protocol.Utils
   alias Lobby.Messages.PacketInit
   alias Lobby.Messages.PacketPing
@@ -252,7 +253,11 @@ defmodule Lobby.ClientConn do
 
                 ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
                 state = %{state | conn: conn, auth_timeout_timer: nil, ping_timer: ping_timer}
-                {%AuthenticationResponse{session_token: Crypto.gen_session_token()}, state}
+
+                {%AuthenticationResponse{
+                   session_token: Crypto.gen_session_token(),
+                   user_profile: get_user_profile(user)
+                 }, state}
 
               {:error, _} ->
                 {%AuthenticationResponse{error_code: "invalid_credentials"}, state}

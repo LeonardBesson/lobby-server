@@ -19,6 +19,9 @@ config :lobby, Lobby.Repo,
   port: "5432"
 
 config :lobby,
+  display_tag_validation: ~r/^[[:alpha:]]{1,16}#[[:digit:]]{6}$/
+
+config :lobby,
   auth_timeout_millis: 2 * 60_000,
   disconnect_delay_millis: 100,
   ping_interval_millis: 10_000,
