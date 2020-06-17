@@ -8,7 +8,8 @@ Central game lobby server written in Elixir
 
 ## Planned Features
 
-- [ ] Client authentication
+- [x] Client authentication
+- [x] User bans
 - [ ] Lobbies
 - [ ] Friend lists
 - [ ] Group and private chat
