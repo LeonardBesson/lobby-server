@@ -11,18 +11,11 @@ config :lobby,
   ecto_repos: [Lobby.Repo],
   generators: [binary_id: true]
 
-config :lobby, Lobby.Repo,
-  database: "lobby",
-  username: "postgres",
-  password: "postgres",
-  hostname: "postgres",
-  port: "5432"
-
 config :lobby,
   display_tag_validation: ~r/^[[:alpha:]]{1,16}#[[:digit:]]{6}$/
 
 config :lobby,
-  reveal_ban_reason: true
+  reveal_ban_reason: false
 
 config :lobby,
   auth_timeout_millis: 2 * 60_000,
@@ -33,3 +26,5 @@ config :lobby,
 
 config :lobby,
   session_token_bytes: 16
+
+import_config "#{Mix.env()}.exs"

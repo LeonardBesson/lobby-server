@@ -248,11 +248,13 @@ defmodule Lobby.ClientConn do
             {:ok, %User{} = user} ->
               case Bans.validate(user) do
                 {:banned, reason, expire_at} ->
-                  ban_message = if @reveal_ban_reason do
-                    "Banned until #{expire_at}.\n#{reason}"
-                  else
-                    "Banned until #{expire_at}"
-                  end
+                  ban_message =
+                    if @reveal_ban_reason do
+                      "Banned until #{expire_at}.\n#{reason}"
+                    else
+                      "Banned until #{expire_at}"
+                    end
+
                   disconnect(state, ban_message)
 
                 :valid ->
@@ -269,6 +271,7 @@ defmodule Lobby.ClientConn do
                     session_token: Crypto.gen_session_token(),
                     user_profile: get_user_profile(user)
                   })
+
                   state
               end
 
