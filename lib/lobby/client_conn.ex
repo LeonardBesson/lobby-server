@@ -9,6 +9,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Accounts.User
   alias Lobby.Bans
   alias Lobby.Connection
+  alias Lobby.ClientRegistry
   alias Lobby.Protocol.Packet
   import Lobby.Protocol.Structs
   import Lobby.Protocol.Utils
@@ -36,6 +37,7 @@ defmodule Lobby.ClientConn do
 
   defmodule State do
     defstruct conn: nil,
+              user_id: nil,
               flush_timer: nil,
               auth_timeout_timer: nil,
               ping_timer: nil,
@@ -45,6 +47,7 @@ defmodule Lobby.ClientConn do
 
     @type t :: %__MODULE__{
             conn: Connection.t(),
+            user_id: Ecto.UUID.t(),
             flush_timer: reference,
             auth_timeout_timer: reference,
             ping_timer: reference,
@@ -141,14 +144,16 @@ defmodule Lobby.ClientConn do
   end
 
   @impl GenServer
-  def handle_info({:tcp_closed, _}, %State{conn: conn} = state) do
+  def handle_info({:tcp_closed, _}, %State{conn: conn, user_id: user_id} = state) do
     Logger.info("Peer #{conn.peername} disconnected")
+    ClientRegistry.client_disconnected(user_id)
 
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, _, reason}, %State{conn: conn} = state) do
+  def handle_info({:tcp_error, _, reason}, %State{conn: conn, user_id: user_id} = state) do
     Logger.error("Error with peer #{conn.peername}: #{inspect(reason)}")
+    ClientRegistry.client_disconnected(user_id)
 
     {:stop, :normal, state}
   end
@@ -191,8 +196,9 @@ defmodule Lobby.ClientConn do
     {:noreply, state}
   end
 
-  def handle_info(:close, %State{conn: conn} = state) do
+  def handle_info(:close, %State{conn: conn, user_id: user_id} = state) do
     conn = Connection.shutdown(conn)
+    ClientRegistry.client_disconnected(user_id)
 
     {:stop, :normal, %{state | conn: conn}}
   end
@@ -260,19 +266,35 @@ defmodule Lobby.ClientConn do
                 :valid ->
                   conn = %{conn | state: :running}
 
-                  if state.auth_timeout_timer != nil do
-                    Process.cancel_timer(state.auth_timeout_timer)
+                  case ClientRegistry.client_authenticated(user.id, self()) do
+                    :ok ->
+                      Logger.info("Client registered: (#{user.id} <-> #{inspect(self())}})")
+
+                      if state.auth_timeout_timer != nil do
+                        Process.cancel_timer(state.auth_timeout_timer)
+                      end
+
+                      ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
+
+                      state = %{
+                        state
+                        | conn: conn,
+                          user_id: user.id,
+                          auth_timeout_timer: nil,
+                          ping_timer: ping_timer
+                      }
+
+                      send_message(self(), %AuthenticationResponse{
+                        session_token: Crypto.gen_session_token(),
+                        user_profile: get_user_profile(user)
+                      })
+
+                      state
+
+                    {:error, reason} ->
+                      Logger.error("Could not register client: #{inspect(reason)}")
+                      disconnect(state, "Internal error")
                   end
-
-                  ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
-                  state = %{state | conn: conn, auth_timeout_timer: nil, ping_timer: ping_timer}
-
-                  send_message(self(), %AuthenticationResponse{
-                    session_token: Crypto.gen_session_token(),
-                    user_profile: get_user_profile(user)
-                  })
-
-                  state
               end
 
             {:error, _} ->
@@ -287,10 +309,12 @@ defmodule Lobby.ClientConn do
     end
   end
 
-  defp disconnect(%State{conn: conn} = state, error_message) when is_binary(error_message) do
+  defp disconnect(%State{conn: conn, user_id: user_id} = state, error_message)
+       when is_binary(error_message) do
     message = %FatalError{message: error_message}
     conn = Connection.send_packet(conn, message_to_packet!(message))
     {_, conn} = Connection.flush(conn)
+    ClientRegistry.client_disconnected(user_id)
     Process.send_after(self(), :close, @disconnect_delay_millis)
     %{state | conn: conn}
   end
