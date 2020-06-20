@@ -51,4 +51,16 @@ defmodule Lobby.Protocol.Structs do
   end
 
   def get_friend_request(_), do: nil
+
+  def get_friend_user_profile(user_id, %FriendRequest{
+        inviter: %User{id: inviter_id, profile: %Profile{}} = inviter,
+        invitee: %User{id: invitee_id, profile: %Profile{}} = invitee
+      }) do
+    case user_id do
+      ^inviter_id -> get_user_profile(invitee)
+      ^invitee_id -> get_user_profile(inviter)
+    end
+  end
+
+  def get_friend_user_profile(_), do: nil
 end

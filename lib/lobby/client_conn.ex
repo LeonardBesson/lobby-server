@@ -24,6 +24,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Messages.AddFriendRequest
   alias Lobby.Messages.AddFriendRequestResponse
   alias Lobby.Messages.FetchPendingFriendRequestsResponse
+  alias Lobby.Messages.FetchFriendListResponse
   alias Lobby.Messages.FriendRequestActionResponse
   alias Lobby.BufferProcessors.LogBufferProcessor
   alias Lobby.Utils.Crypto
@@ -374,7 +375,9 @@ defmodule Lobby.ClientConn do
           case Friends.friend_request_action(msg.request_id, user_id, msg.action) do
             {:ok, request} ->
               update_friend_requests(user_id)
+              update_friend_list(user_id)
               update_friend_requests(request.inviter_id)
+              update_friend_list(request.inviter_id)
               %FriendRequestActionResponse{request_id: msg.request_id}
 
             {:error, _} ->
@@ -382,6 +385,10 @@ defmodule Lobby.ClientConn do
           end
 
         send_message(self(), response)
+        state
+
+      :fetch_friend_list ->
+        update_friend_list(user_id)
         state
 
       type ->
@@ -398,6 +405,14 @@ defmodule Lobby.ClientConn do
         pending_as_inviter: pending_as_inviter,
         pending_as_invitee: pending_as_invitee
       })
+    end)
+  end
+
+  defp update_friend_list(user_id) do
+    ClientRegistry.if_online(user_id, fn client_pid ->
+      friend_list = Friends.fetch_friend_list(user_id)
+
+      send_message(client_pid, %FetchFriendListResponse{friend_list: friend_list})
     end)
   end
 

@@ -6,6 +6,21 @@ defmodule Lobby.Friends do
   alias Lobby.Friends.FriendRequest
   alias Lobby.Repo
 
+  def fetch_friend_list(user_id) do
+    Repo.all(
+      from(fr in FriendRequest,
+        join: inviter in assoc(fr, :inviter),
+        join: inviter_p in assoc(inviter, :profile),
+        join: invitee in assoc(fr, :invitee),
+        join: invitee_p in assoc(invitee, :profile),
+        where:
+          fr.state == "accepted" and (fr.inviter_id == ^user_id or fr.invitee_id == ^user_id),
+        preload: [inviter: {inviter, profile: inviter_p}, invitee: {invitee, profile: invitee_p}]
+      )
+    )
+    |> Enum.map(fn fr -> get_friend_user_profile(user_id, fr) end)
+  end
+
   def friend_request_action(id, invitee_id, action) do
     state =
       case action do
