@@ -1,3 +1,6 @@
 #!/bin/bash
 
-docker exec -it lobby_lobby_1 iex --erl "-kernel shell_history enabled" -S mix
+# Here we use --preload-modules because enums modules are not loaded
+# when only the variants are referenced, which causes deserializing the
+# enum to fail.
+docker exec -it lobby_lobby_1 iex --erl "-kernel shell_history enabled" -S mix run --preload-modules
