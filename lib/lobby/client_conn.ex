@@ -24,6 +24,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Messages.AddFriendRequest
   alias Lobby.Messages.AddFriendRequestResponse
   alias Lobby.Messages.FetchPendingFriendRequestsResponse
+  alias Lobby.Messages.FriendRequestActionResponse
   alias Lobby.BufferProcessors.LogBufferProcessor
   alias Lobby.Utils.Crypto
   require Logger
@@ -333,15 +334,8 @@ defmodule Lobby.ClientConn do
 
               case Friends.create_friend_request(friend_request_attrs) do
                 {:ok, _} ->
-                  ClientRegistry.if_online(invitee.id, fn invitee_pid ->
-                    {pending_as_inviter, pending_as_invitee} =
-                      Friends.fetch_pending_requests(invitee.id)
-
-                    send_message(invitee_pid, %FetchPendingFriendRequestsResponse{
-                      pending_as_inviter: pending_as_inviter,
-                      pending_as_invitee: pending_as_invitee
-                    })
-                  end)
+                  update_friend_requests(invitee.id)
+                  update_friend_requests(user_id)
 
                   %AddFriendRequestResponse{user_tag: msg.user_tag}
 
@@ -372,19 +366,39 @@ defmodule Lobby.ClientConn do
         state
 
       :fetch_pending_friend_requests ->
-        {pending_as_inviter, pending_as_invitee} =
-          Friends.fetch_pending_requests(user_id)
+        update_friend_requests(user_id)
+        state
 
-        send_message(self(), %FetchPendingFriendRequestsResponse{
-          pending_as_inviter: pending_as_inviter,
-          pending_as_invitee: pending_as_invitee
-        })
+      :friend_request_action ->
+        response =
+          case Friends.friend_request_action(msg.request_id, user_id, msg.action) do
+            {:ok, request} ->
+              update_friend_requests(user_id)
+              update_friend_requests(request.inviter_id)
+              %FriendRequestActionResponse{request_id: msg.request_id}
+
+            {:error, _} ->
+              %FriendRequestActionResponse{request_id: msg.request_id, error_code: "not_found"}
+          end
+
+        send_message(self(), response)
         state
 
       type ->
         Logger.error("Unknown packet type #{type}")
         state
     end
+  end
+
+  defp update_friend_requests(user_id) do
+    ClientRegistry.if_online(user_id, fn client_pid ->
+      {pending_as_inviter, pending_as_invitee} = Friends.fetch_pending_requests(user_id)
+
+      send_message(client_pid, %FetchPendingFriendRequestsResponse{
+        pending_as_inviter: pending_as_inviter,
+        pending_as_invitee: pending_as_invitee
+      })
+    end)
   end
 
   defp disconnect(%State{conn: conn, user_id: user_id} = state, error_message)

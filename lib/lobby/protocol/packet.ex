@@ -36,7 +36,8 @@ defmodule Lobby.Protocol.Packet do
     friend_request_action_response: {9, [request_id: :string, error_code: {:option, :string}]},
     fetch_pending_friend_requests: {10, []},
     fetch_pending_friend_requests_response:
-      {11, [pending_as_inviter: {:list, FriendRequest}, pending_as_invitee: {:list, FriendRequest}]}
+      {11,
+       [pending_as_inviter: {:list, FriendRequest}, pending_as_invitee: {:list, FriendRequest}]}
   )
 
   @flag_fixed_header 1 <<< 7

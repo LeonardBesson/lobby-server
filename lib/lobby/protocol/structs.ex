@@ -40,6 +40,7 @@ defmodule Lobby.Protocol.Structs do
       }) do
     %Lobby.FriendRequest{id: id, state: state, user_profile: get_user_profile(user)}
   end
+
   def get_friend_request(%FriendRequest{
         id: id,
         state: state,
