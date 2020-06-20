@@ -6,12 +6,14 @@ defmodule Lobby.Protocol.Packet do
   import Bincode
   import Lobby.Protocol.PacketDefinition
   alias Lobby.UserProfile
+  alias Lobby.FriendRequestAction
+  alias Lobby.FriendRequest
 
   defstruct flags: 0, packet_type: 0, data: <<>>
 
   @type t :: %__MODULE__{
           flags: byte,
-          packet_type: non_neg_integer,
+          packet_type: atom,
           data: binary
         }
 
@@ -27,7 +29,14 @@ defmodule Lobby.Protocol.Packet do
          user_profile: {:option, UserProfile}
        ]},
     packet_ping: {4, [id: :string, peer_time: :u64]},
-    packet_pong: {5, [id: :string, peer_time: :u64]}
+    packet_pong: {5, [id: :string, peer_time: :u64]},
+    add_friend_request: {6, [user_tag: :string]},
+    add_friend_request_response: {7, [user_tag: :string, error_code: {:option, :string}]},
+    friend_request_action: {8, [request_id: :string, action: FriendRequestAction]},
+    friend_request_action_response: {9, [request_id: :string, error_code: {:option, :string}]},
+    fetch_pending_friend_requests: {10, []},
+    fetch_pending_friend_requests_response:
+      {11, [pending_as_inviter: {:list, FriendRequest}, pending_as_invitee: {:list, FriendRequest}]}
   )
 
   @flag_fixed_header 1 <<< 7

@@ -20,6 +20,8 @@ defmodule Lobby.ClientRegistry do
     end
   end
 
+  def client_disconnected(nil), do: :ok
+
   def client_disconnected(user_id) when is_binary(user_id) do
     transaction = :mnesia.transaction(fn -> :mnesia.delete({@table_name, user_id}) end)
 
@@ -43,6 +45,17 @@ defmodule Lobby.ClientRegistry do
     case whereis(user_id) do
       {:ok, res} -> res
       {:error, reason} -> throw(reason)
+    end
+  end
+
+  @doc """
+  Execute the given function if the `user_id` is online.
+  The PID of the user's client connection is passed.
+  """
+  def if_online(user_id, callback) when is_binary(user_id) and is_function(callback, 1) do
+    case whereis(user_id) do
+      {:ok, conn_pid} when is_pid(conn_pid) -> {:ok, callback.(conn_pid)}
+      _ -> {:error, :offline}
     end
   end
 end

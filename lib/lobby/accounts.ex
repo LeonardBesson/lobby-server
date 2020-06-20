@@ -22,6 +22,10 @@ defmodule Lobby.Accounts do
     Repo.get_by(User, email: email)
   end
 
+  def get_by_user_tag(user_tag) do
+    Repo.get_by(User, user_tag: user_tag)
+  end
+
   def create_user(attrs \\ %{}) do
     %User{}
     |> User.changeset(attrs)

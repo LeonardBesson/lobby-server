@@ -4,6 +4,7 @@ defmodule Lobby.Protocol.Structs do
   """
   import Bincode
   alias Lobby.Accounts.User
+  alias Lobby.Friends.FriendRequest
   alias Lobby.Profiles.Profile
 
   declare_struct(
@@ -21,4 +22,32 @@ defmodule Lobby.Protocol.Structs do
       }) do
     %Lobby.UserProfile{user_tag: user_tag, display_name: display_name, avatar_url: avatar_url}
   end
+
+  declare_enum(Lobby.FriendRequestAction, [Accept: [], Decline: []], absolute: true)
+
+  declare_struct(
+    Lobby.FriendRequest,
+    # user_profile is inviter or invitee depending on context
+    [id: :string, state: :string, user_profile: Lobby.UserProfile],
+    absolute: true
+  )
+
+  def get_friend_request(%FriendRequest{
+        id: id,
+        state: state,
+        inviter: %User{profile: %Profile{}} = user,
+        invitee: %Ecto.Association.NotLoaded{}
+      }) do
+    %Lobby.FriendRequest{id: id, state: state, user_profile: get_user_profile(user)}
+  end
+  def get_friend_request(%FriendRequest{
+        id: id,
+        state: state,
+        inviter: %Ecto.Association.NotLoaded{},
+        invitee: %User{profile: %Profile{}} = user
+      }) do
+    %Lobby.FriendRequest{id: id, state: state, user_profile: get_user_profile(user)}
+  end
+
+  def get_friend_request(_), do: nil
 end

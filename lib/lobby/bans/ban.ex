@@ -12,8 +12,8 @@ defmodule Lobby.Bans.Ban do
     timestamps()
   end
 
-  def changeset(user, attrs) do
-    user
+  def changeset(ban, attrs) do
+    ban
     |> cast(attrs, [:reason, :expire_at])
     |> validate_required([:reason, :expire_at])
   end

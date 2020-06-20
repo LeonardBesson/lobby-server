@@ -1,7 +1,9 @@
 defmodule Lobby.Accounts.User do
   @moduledoc false
   use Lobby.Ecto.BaseSchema
+  alias Lobby.Bans.Ban
   alias Lobby.Profiles.Profile
+  alias Lobby.Friends.FriendRequest
   import Ecto.Changeset
   require Lobby
 
@@ -14,6 +16,9 @@ defmodule Lobby.Accounts.User do
     field(:password, :string, virtual: true)
     field(:password_hash, :string)
     has_one(:profile, Profile)
+    has_many(:bans, Ban)
+    has_many(:sent_friend_requests, FriendRequest, foreign_key: :inviter_id)
+    has_many(:received_friend_requests, FriendRequest, foreign_key: :invitee_id)
 
     timestamps()
   end

@@ -22,6 +22,7 @@ defmodule Lobby.Protocol.PacketDefinition do
          %PacketInfo{
            packet_type: type,
            name: Macro.camelize(to_string(type)),
+           message_module: get_message_module(type),
            fixed_size: nil
          }}
       end)
@@ -31,7 +32,7 @@ defmodule Lobby.Protocol.PacketDefinition do
     Module.put_attribute(caller_module, :packet_infos, packet_infos)
 
     for {type, {_, fields}} <- packets do
-      message_module = Module.concat([Lobby.Messages, Macro.camelize(to_string(type))])
+      message_module = get_message_module(type)
 
       quote do
         Bincode.declare_struct(unquote(message_module), unquote(fields), absolute: true)
@@ -47,5 +48,9 @@ defmodule Lobby.Protocol.PacketDefinition do
         end
       end
     end
+  end
+
+  defp get_message_module(type) when is_atom(type) do
+    Module.concat([Lobby.Messages, Macro.camelize(to_string(type))])
   end
 end

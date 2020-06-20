@@ -9,8 +9,10 @@ defmodule Lobby.ClientConn do
   alias Lobby.Accounts.User
   alias Lobby.Bans
   alias Lobby.Connection
+  alias Lobby.Friends
   alias Lobby.ClientRegistry
   alias Lobby.Protocol.Packet
+  alias Lobby.Protocol.Message
   import Lobby.Protocol.Structs
   import Lobby.Protocol.Utils
   alias Lobby.Messages.PacketInit
@@ -19,6 +21,9 @@ defmodule Lobby.ClientConn do
   alias Lobby.Messages.FatalError
   alias Lobby.Messages.AuthenticationRequest
   alias Lobby.Messages.AuthenticationResponse
+  alias Lobby.Messages.AddFriendRequest
+  alias Lobby.Messages.AddFriendRequestResponse
+  alias Lobby.Messages.FetchPendingFriendRequestsResponse
   alias Lobby.BufferProcessors.LogBufferProcessor
   alias Lobby.Utils.Crypto
   require Logger
@@ -108,6 +113,10 @@ defmodule Lobby.ClientConn do
     GenServer.cast(client, {:send_message, message})
   end
 
+  def receive_message(client, message) do
+    GenServer.cast(client, {:receive_message, message})
+  end
+
   def schedule_flush(%State{flush_timer: flush_timer} = state) do
     flush_timer =
       if flush_timer == nil do
@@ -130,6 +139,16 @@ defmodule Lobby.ClientConn do
     state = schedule_flush(state)
 
     {:noreply, %{state | conn: conn}}
+  end
+
+  @impl GenServer
+  def handle_cast({:receive_message, message}, %State{conn: conn} = state) do
+    Logger.debug("Received message: #{inspect(message)}")
+
+    type = Message.packet_type(message)
+    state = handle_incoming_message(type, message, state)
+
+    {:noreply, state}
   end
 
   @impl GenServer
@@ -167,7 +186,7 @@ defmodule Lobby.ClientConn do
     {:noreply, %{state | flush_timer: nil}}
   end
 
-  def handle_info(:ping_client, %State{conn: conn} = state) do
+  def handle_info(:ping_client, %State{} = state) do
     Logger.debug("Ping triggered")
 
     if state.last_ping_id != nil do
@@ -203,13 +222,17 @@ defmodule Lobby.ClientConn do
     {:stop, :normal, %{state | conn: conn}}
   end
 
-  defp handle_incoming_packet(%Packet{} = packet, %State{conn: conn} = state) do
+  defp handle_incoming_packet(%Packet{} = packet, %State{conn: conn, user_id: user_id} = state) do
     Logger.debug("Received incoming packet #{inspect(packet)}")
 
-    case packet.packet_type do
-      :packet_init ->
-        msg = packet_to_message!(packet, PacketInit)
+    packet_info = Packet.get!(packet.packet_type)
+    msg = packet_to_message!(packet, packet_info.message_module)
+    handle_incoming_message(packet.packet_type, msg, state)
+  end
 
+  defp handle_incoming_message(type, msg, %State{conn: conn, user_id: user_id} = state) do
+    case type do
+      :packet_init ->
         cond do
           msg.protocol_version != @protocol_version ->
             disconnect(state, "Invalid protocol version #{msg.protocol_version}")
@@ -223,13 +246,10 @@ defmodule Lobby.ClientConn do
         end
 
       :fatal_error ->
-        msg = packet_to_message!(packet, FatalError)
         Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
         state
 
       :packet_pong ->
-        msg = packet_to_message!(packet, PacketPong)
-
         if msg.id != state.last_ping_id do
           Logger.error("Ping/Pong ID mismatch")
           state
@@ -245,8 +265,6 @@ defmodule Lobby.ClientConn do
         end
 
       :authentication_request ->
-        msg = packet_to_message!(packet, AuthenticationRequest)
-
         if conn.state != :authenticating do
           disconnect(state, "Packets out of order")
         else
@@ -302,6 +320,66 @@ defmodule Lobby.ClientConn do
               state
           end
         end
+
+      :add_friend_request ->
+        response =
+          case Accounts.get_by_user_tag(msg.user_tag) do
+            %User{} = invitee ->
+              friend_request_attrs = %{
+                inviter_id: user_id,
+                invitee_id: invitee.id,
+                state: "pending"
+              }
+
+              case Friends.create_friend_request(friend_request_attrs) do
+                {:ok, _} ->
+                  ClientRegistry.if_online(invitee.id, fn invitee_pid ->
+                    {pending_as_inviter, pending_as_invitee} =
+                      Friends.fetch_pending_requests(invitee.id)
+
+                    send_message(invitee_pid, %FetchPendingFriendRequestsResponse{
+                      pending_as_inviter: pending_as_inviter,
+                      pending_as_invitee: pending_as_invitee
+                    })
+                  end)
+
+                  %AddFriendRequestResponse{user_tag: msg.user_tag}
+
+                {:error,
+                 %Ecto.Changeset{
+                   errors: [
+                     inviter_id:
+                       {_,
+                        [
+                          constraint: :unique,
+                          constraint_name: "friend_requests_inviter_id_invitee_id_index"
+                        ]}
+                   ]
+                 }} ->
+                  # Already exists, done
+                  %AddFriendRequestResponse{user_tag: msg.user_tag}
+
+                {:error, _} ->
+                  %AddFriendRequestResponse{user_tag: msg.user_tag, error_code: "not_found"}
+              end
+
+            nil ->
+              Logger.debug("AddFriendRequest for unknown user tag: #{msg.user_tag}")
+              %AddFriendRequestResponse{user_tag: msg.user_tag, error_code: "not_found"}
+          end
+
+        send_message(self(), response)
+        state
+
+      :fetch_pending_friend_requests ->
+        {pending_as_inviter, pending_as_invitee} =
+          Friends.fetch_pending_requests(user_id)
+
+        send_message(self(), %FetchPendingFriendRequestsResponse{
+          pending_as_inviter: pending_as_inviter,
+          pending_as_invitee: pending_as_invitee
+        })
+        state
 
       type ->
         Logger.error("Unknown packet type #{type}")

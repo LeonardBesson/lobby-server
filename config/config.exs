@@ -12,7 +12,7 @@ config :lobby,
   generators: [binary_id: true]
 
 config :lobby,
-  display_tag_validation: ~r/^[[:alpha:]]{1,16}#[[:digit:]]{6}$/
+  display_tag_validation: ~r/^[[:alnum:]]{1,16}#[[:digit:]]{6}$/
 
 config :lobby,
   reveal_ban_reason: false
