@@ -26,6 +26,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Messages.FetchPendingFriendRequestsResponse
   alias Lobby.Messages.FetchFriendListResponse
   alias Lobby.Messages.FriendRequestActionResponse
+  alias Lobby.Messages.RemoveFriendResponse
   alias Lobby.BufferProcessors.LogBufferProcessor
   alias Lobby.Utils.Crypto
   require Logger
@@ -389,6 +390,27 @@ defmodule Lobby.ClientConn do
 
       :fetch_friend_list ->
         update_friend_list(user_id)
+        state
+
+      :remove_friend ->
+        other_user = Accounts.get_by_user_tag(msg.user_tag)
+
+        response =
+          if other_user == nil do
+            %RemoveFriendResponse{error_code: "not_found"}
+          else
+            case Friends.remove_friend(user_id, other_user.id) do
+              :ok ->
+                update_friend_list(user_id)
+                update_friend_list(other_user.id)
+                %RemoveFriendResponse{}
+
+              :error ->
+                %RemoveFriendResponse{error_code: "not_found"}
+            end
+          end
+
+        send_message(self(), response)
         state
 
       type ->

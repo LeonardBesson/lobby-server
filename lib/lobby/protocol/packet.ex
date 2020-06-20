@@ -40,7 +40,9 @@ defmodule Lobby.Protocol.Packet do
       {11,
        [pending_as_inviter: {:list, FriendRequest}, pending_as_invitee: {:list, FriendRequest}]},
     fetch_friend_list: {12, []},
-    fetch_friend_list_response: {13, [friend_list: {:list, Friend}]}
+    fetch_friend_list_response: {13, [friend_list: {:list, Friend}]},
+    remove_friend: {14, [user_tag: :string]},
+    remove_friend_response: {15, [error_code: {:option, :string}]}
   )
 
   @flag_fixed_header 1 <<< 7

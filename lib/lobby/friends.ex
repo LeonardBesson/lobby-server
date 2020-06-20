@@ -6,6 +6,21 @@ defmodule Lobby.Friends do
   alias Lobby.Friends.FriendRequest
   alias Lobby.Repo
 
+  def remove_friend(user_id, other_user_id) do
+    {count, _} =
+      from(fr in FriendRequest,
+        where:
+          (fr.inviter_id == ^user_id and fr.invitee_id == ^other_user_id) or
+            (fr.inviter_id == ^other_user_id and fr.invitee_id == ^user_id)
+      )
+      |> Repo.delete_all()
+
+    case count do
+      1 -> :ok
+      0 -> :error
+    end
+  end
+
   def fetch_friend_list(user_id) do
     Repo.all(
       from(fr in FriendRequest,
