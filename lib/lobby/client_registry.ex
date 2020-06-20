@@ -48,6 +48,13 @@ defmodule Lobby.ClientRegistry do
     end
   end
 
+  def is_online(user_id) when is_binary(user_id) do
+    case whereis(user_id) do
+      {:ok, conn_pid} when is_pid(conn_pid) -> true
+      _ -> false
+    end
+  end
+
   @doc """
   Execute the given function if the `user_id` is online.
   The PID of the user's client connection is passed.

@@ -6,6 +6,7 @@ defmodule Lobby.Protocol.Packet do
   import Bincode
   import Lobby.Protocol.PacketDefinition
   alias Lobby.UserProfile
+  alias Lobby.Friend
   alias Lobby.FriendRequestAction
   alias Lobby.FriendRequest
 
@@ -39,7 +40,7 @@ defmodule Lobby.Protocol.Packet do
       {11,
        [pending_as_inviter: {:list, FriendRequest}, pending_as_invitee: {:list, FriendRequest}]},
     fetch_friend_list: {12, []},
-    fetch_friend_list_response: {13, [friend_list: {:list, UserProfile}]}
+    fetch_friend_list_response: {13, [friend_list: {:list, Friend}]}
   )
 
   @flag_fixed_header 1 <<< 7

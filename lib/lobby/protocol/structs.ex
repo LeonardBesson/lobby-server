@@ -3,6 +3,7 @@ defmodule Lobby.Protocol.Structs do
   Structs used in messages
   """
   import Bincode
+  alias Lobby.ClientRegistry
   alias Lobby.Accounts.User
   alias Lobby.Friends.FriendRequest
   alias Lobby.Profiles.Profile
@@ -52,15 +53,27 @@ defmodule Lobby.Protocol.Structs do
 
   def get_friend_request(_), do: nil
 
-  def get_friend_user_profile(user_id, %FriendRequest{
+  declare_struct(
+    Lobby.Friend,
+    [user_profile: Lobby.UserProfile, is_online: :bool],
+    absolute: true
+  )
+
+  def get_friend(user_id, %FriendRequest{
         inviter: %User{id: inviter_id, profile: %Profile{}} = inviter,
         invitee: %User{id: invitee_id, profile: %Profile{}} = invitee
       }) do
-    case user_id do
-      ^inviter_id -> get_user_profile(invitee)
-      ^invitee_id -> get_user_profile(inviter)
-    end
+    {user_profile, is_online} =
+      case user_id do
+        ^inviter_id -> {get_user_profile(invitee), ClientRegistry.is_online(invitee_id)}
+        ^invitee_id -> {get_user_profile(inviter), ClientRegistry.is_online(inviter_id)}
+      end
+
+    %Lobby.Friend{
+      user_profile: user_profile,
+      is_online: is_online
+    }
   end
 
-  def get_friend_user_profile(_), do: nil
+  def get_friend(_), do: nil
 end

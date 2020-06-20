@@ -18,7 +18,7 @@ defmodule Lobby.Friends do
         preload: [inviter: {inviter, profile: inviter_p}, invitee: {invitee, profile: invitee_p}]
       )
     )
-    |> Enum.map(fn fr -> get_friend_user_profile(user_id, fr) end)
+    |> Enum.map(fn fr -> get_friend(user_id, fr) end)
   end
 
   def friend_request_action(id, invitee_id, action) do
