@@ -18,11 +18,8 @@ defmodule Lobby.ClientConn do
   import Lobby.Protocol.Utils
   alias Lobby.Messages.PacketInit
   alias Lobby.Messages.PacketPing
-  alias Lobby.Messages.PacketPong
   alias Lobby.Messages.FatalError
-  alias Lobby.Messages.AuthenticationRequest
   alias Lobby.Messages.AuthenticationResponse
-  alias Lobby.Messages.AddFriendRequest
   alias Lobby.Messages.AddFriendRequestResponse
   alias Lobby.Messages.FetchPendingFriendRequestsResponse
   alias Lobby.Messages.FetchFriendListResponse
@@ -148,7 +145,7 @@ defmodule Lobby.ClientConn do
   end
 
   @impl GenServer
-  def handle_cast({:receive_message, message}, %State{conn: conn} = state) do
+  def handle_cast({:receive_message, message}, %State{} = state) do
     Logger.debug("Received message: #{inspect(message)}")
 
     type = Message.packet_type(message)
@@ -237,7 +234,7 @@ defmodule Lobby.ClientConn do
     {:stop, :normal, %{state | conn: conn}}
   end
 
-  defp handle_incoming_packet(%Packet{} = packet, %State{conn: conn} = state) do
+  defp handle_incoming_packet(%Packet{} = packet, %State{} = state) do
     Logger.debug("Received incoming packet #{inspect(packet)}")
 
     packet_info = Packet.get!(packet.packet_type)
