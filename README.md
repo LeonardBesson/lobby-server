@@ -13,7 +13,7 @@ Central game lobby server written in Elixir
 - [ ] Lobbies
 - [x] Friend lists
 - [ ] Group chat
-- [ ] Private chat
+- [x] Private chat
 - [ ] Server browsing
 - [ ] Matchmaking
 - [ ] Clustering
