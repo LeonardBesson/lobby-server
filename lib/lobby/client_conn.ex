@@ -325,7 +325,7 @@ defmodule Lobby.ClientConn do
                           state
 
                         {:error, reason} ->
-                          Logger.error("Could not register profile: #{inspect(reason)}")
+                          Logger.error("ProfileCache error: #{inspect(reason)}")
                           disconnect(state, "Internal error")
                       end
 
@@ -437,19 +437,21 @@ defmodule Lobby.ClientConn do
           msg.user_tag,
           fn client_pid ->
             send_message(client_pid, %NewPrivateMessage{
-              from: get_user_profile(user),
-              content: msg.content
+              profile: get_user_profile(user),
+              content: msg.content,
+              is_self: false
             })
 
             case ProfileCache.get_or_create_by_tag(msg.user_tag) do
               {:ok, other_user_profile} ->
                 send_message(self(), %NewPrivateMessage{
-                  from: other_user_profile,
-                  content: msg.content
+                  profile: other_user_profile,
+                  content: msg.content,
+                  is_self: true
                 })
 
               {:error, reason} ->
-                Logger.error("Could not register profile: #{inspect(reason)}")
+                Logger.error("ProfileCache error: #{inspect(reason)}")
                 disconnect(state, "Internal error")
             end
           end,
