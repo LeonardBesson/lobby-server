@@ -11,6 +11,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Connection
   alias Lobby.Friends
   alias Lobby.ClientRegistry
+  alias Lobby.ProfileCache
   alias Lobby.Protocol.Packet
   alias Lobby.Protocol.Message
   import Lobby.Protocol.Structs
@@ -302,26 +303,34 @@ defmodule Lobby.ClientConn do
                     :ok ->
                       Logger.info("Client registered: (#{user.id} <-> #{inspect(self())}})")
 
-                      if state.auth_timeout_timer != nil do
-                        Process.cancel_timer(state.auth_timeout_timer)
+                      case ProfileCache.get_or_create(user.id) do
+                        {:ok, _} ->
+                          if state.auth_timeout_timer != nil do
+                            Process.cancel_timer(state.auth_timeout_timer)
+                          end
+
+                          ping_timer =
+                            Process.send_after(self(), :ping_client, @ping_interval_millis)
+
+                          state = %{
+                            state
+                            | conn: conn,
+                              user: user,
+                              auth_timeout_timer: nil,
+                              ping_timer: ping_timer
+                          }
+
+                          send_message(self(), %AuthenticationResponse{
+                            session_token: Crypto.gen_session_token(),
+                            user_profile: get_user_profile(user)
+                          })
+
+                          state
+
+                        {:error, reason} ->
+                          Logger.error("Could not register profile: #{inspect(reason)}")
+                          disconnect(state, "Internal error")
                       end
-
-                      ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
-
-                      state = %{
-                        state
-                        | conn: conn,
-                          user: user,
-                          auth_timeout_timer: nil,
-                          ping_timer: ping_timer
-                      }
-
-                      send_message(self(), %AuthenticationResponse{
-                        session_token: Crypto.gen_session_token(),
-                        user_profile: get_user_profile(user)
-                      })
-
-                      state
 
                     {:error, reason} ->
                       Logger.error("Could not register client: #{inspect(reason)}")
@@ -430,18 +439,22 @@ defmodule Lobby.ClientConn do
         ClientRegistry.if_online_by_tag(
           msg.user_tag,
           fn client_pid ->
-            # TODO: profile cache
-            other_user = Accounts.get_by_user_tag(msg.user_tag) |> Lobby.Repo.preload(:profile)
-
             send_message(client_pid, %NewPrivateMessage{
               from: get_user_profile(user),
               content: msg.content
             })
 
-            send_message(self(), %NewPrivateMessage{
-              from: get_user_profile(other_user),
-              content: msg.content
-            })
+            case ProfileCache.get_or_create_by_tag(msg.user_tag) do
+              {:ok, other_user_profile} ->
+                send_message(self(), %NewPrivateMessage{
+                  from: other_user_profile,
+                  content: msg.content
+                })
+
+              {:error, reason} ->
+                Logger.error("Could not register profile: #{inspect(reason)}")
+                disconnect(state, "Internal error")
+            end
           end,
           fn ->
             send_message(self(), %SystemNotification{content: "User #{msg.user_tag} is offline"})

@@ -10,4 +10,7 @@ config :lobby, Lobby.Repo,
   pool_size: 10
 
 config :lobby,
+  ping_interval_millis: 2 * 60_000
+
+config :lobby,
   reveal_ban_reason: true

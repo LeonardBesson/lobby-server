@@ -4,6 +4,7 @@ defmodule Lobby.Application do
   use Application
   require Logger
   alias Lobby.ClientRegistry
+  alias Lobby.ProfileCache
 
   def start(_type, _args) do
     children = [
@@ -25,8 +26,8 @@ defmodule Lobby.Application do
 
   def init_mnesia do
     :mnesia.start()
-    ClientRegistry.create_table()
-    :ok = :mnesia.wait_for_tables([ClientRegistry.table_name()], :timer.seconds(15))
+    tables = Enum.map([ClientRegistry, ProfileCache], fn mod -> mod.create_table() end)
+    :ok = :mnesia.wait_for_tables(tables, :timer.seconds(15))
     Logger.debug("Mnesia initialized")
   end
 end

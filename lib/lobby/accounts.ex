@@ -18,6 +18,10 @@ defmodule Lobby.Accounts do
     end
   end
 
+  def get_by_with_profile(clauses) do
+    Repo.get_by(User, clauses) |> Repo.preload(:profile)
+  end
+
   def get_by_email(email) do
     Repo.get_by(User, email: email)
   end

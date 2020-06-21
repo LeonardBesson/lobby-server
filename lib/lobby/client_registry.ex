@@ -12,6 +12,8 @@ defmodule Lobby.ClientRegistry do
       :mnesia.create_table(@table_name, attributes: [:user_id, :user_tag, :conn_pid])
 
     {:atomic, :ok} = :mnesia.add_table_index(@table_name, :user_tag)
+
+    @table_name
   end
 
   def client_authenticated(user_id, user_tag, conn_pid)
