@@ -42,7 +42,10 @@ defmodule Lobby.Protocol.Packet do
     fetch_friend_list: {12, []},
     fetch_friend_list_response: {13, [friend_list: {:list, Friend}]},
     remove_friend: {14, [user_tag: :string]},
-    remove_friend_response: {15, [error_code: {:option, :string}]}
+    remove_friend_response: {15, [error_code: {:option, :string}]},
+    send_private_message: {16, [user_tag: :string, content: :string]},
+    new_private_message: {17, [from: UserProfile, content: :string]},
+    system_notification: {18, [content: :string]}
   )
 
   @flag_fixed_header 1 <<< 7

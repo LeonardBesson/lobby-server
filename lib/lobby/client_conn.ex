@@ -27,6 +27,8 @@ defmodule Lobby.ClientConn do
   alias Lobby.Messages.FetchFriendListResponse
   alias Lobby.Messages.FriendRequestActionResponse
   alias Lobby.Messages.RemoveFriendResponse
+  alias Lobby.Messages.NewPrivateMessage
+  alias Lobby.Messages.SystemNotification
   alias Lobby.BufferProcessors.LogBufferProcessor
   alias Lobby.Utils.Crypto
   require Logger
@@ -45,7 +47,7 @@ defmodule Lobby.ClientConn do
 
   defmodule State do
     defstruct conn: nil,
-              user_id: nil,
+              user: nil,
               flush_timer: nil,
               auth_timeout_timer: nil,
               ping_timer: nil,
@@ -55,7 +57,7 @@ defmodule Lobby.ClientConn do
 
     @type t :: %__MODULE__{
             conn: Connection.t(),
-            user_id: Ecto.UUID.t(),
+            user: map,
             flush_timer: reference,
             auth_timeout_timer: reference,
             ping_timer: reference,
@@ -166,16 +168,22 @@ defmodule Lobby.ClientConn do
   end
 
   @impl GenServer
-  def handle_info({:tcp_closed, _}, %State{conn: conn, user_id: user_id} = state) do
+  def handle_info({:tcp_closed, _}, %State{conn: conn, user: user} = state) do
     Logger.info("Peer #{conn.peername} disconnected")
-    ClientRegistry.client_disconnected(user_id)
+
+    if user != nil do
+      ClientRegistry.client_disconnected(user.id)
+    end
 
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, _, reason}, %State{conn: conn, user_id: user_id} = state) do
+  def handle_info({:tcp_error, _, reason}, %State{conn: conn, user: user} = state) do
     Logger.error("Error with peer #{conn.peername}: #{inspect(reason)}")
-    ClientRegistry.client_disconnected(user_id)
+
+    if user != nil do
+      ClientRegistry.client_disconnected(user.id)
+    end
 
     {:stop, :normal, state}
   end
@@ -218,14 +226,17 @@ defmodule Lobby.ClientConn do
     {:noreply, state}
   end
 
-  def handle_info(:close, %State{conn: conn, user_id: user_id} = state) do
+  def handle_info(:close, %State{conn: conn, user: user} = state) do
     conn = Connection.shutdown(conn)
-    ClientRegistry.client_disconnected(user_id)
+
+    if user != nil do
+      ClientRegistry.client_disconnected(user.id)
+    end
 
     {:stop, :normal, %{state | conn: conn}}
   end
 
-  defp handle_incoming_packet(%Packet{} = packet, %State{conn: conn, user_id: user_id} = state) do
+  defp handle_incoming_packet(%Packet{} = packet, %State{conn: conn} = state) do
     Logger.debug("Received incoming packet #{inspect(packet)}")
 
     packet_info = Packet.get!(packet.packet_type)
@@ -233,7 +244,7 @@ defmodule Lobby.ClientConn do
     handle_incoming_message(packet.packet_type, msg, state)
   end
 
-  defp handle_incoming_message(type, msg, %State{conn: conn, user_id: user_id} = state) do
+  defp handle_incoming_message(type, msg, %State{conn: conn, user: user} = state) do
     case type do
       :packet_init ->
         cond do
@@ -287,7 +298,7 @@ defmodule Lobby.ClientConn do
                 :valid ->
                   conn = %{conn | state: :running}
 
-                  case ClientRegistry.client_authenticated(user.id, self()) do
+                  case ClientRegistry.client_authenticated(user.id, user.user_tag, self()) do
                     :ok ->
                       Logger.info("Client registered: (#{user.id} <-> #{inspect(self())}})")
 
@@ -300,7 +311,7 @@ defmodule Lobby.ClientConn do
                       state = %{
                         state
                         | conn: conn,
-                          user_id: user.id,
+                          user: user,
                           auth_timeout_timer: nil,
                           ping_timer: ping_timer
                       }
@@ -329,7 +340,7 @@ defmodule Lobby.ClientConn do
           case Accounts.get_by_user_tag(msg.user_tag) do
             %User{} = invitee ->
               friend_request_attrs = %{
-                inviter_id: user_id,
+                inviter_id: user.id,
                 invitee_id: invitee.id,
                 state: "pending"
               }
@@ -337,7 +348,7 @@ defmodule Lobby.ClientConn do
               case Friends.create_friend_request(friend_request_attrs) do
                 {:ok, _} ->
                   update_friend_requests(invitee.id)
-                  update_friend_requests(user_id)
+                  update_friend_requests(user.id)
 
                   %AddFriendRequestResponse{user_tag: msg.user_tag}
 
@@ -368,15 +379,15 @@ defmodule Lobby.ClientConn do
         state
 
       :fetch_pending_friend_requests ->
-        update_friend_requests(user_id)
+        update_friend_requests(user.id)
         state
 
       :friend_request_action ->
         response =
-          case Friends.friend_request_action(msg.request_id, user_id, msg.action) do
+          case Friends.friend_request_action(msg.request_id, user.id, msg.action) do
             {:ok, request} ->
-              update_friend_requests(user_id)
-              update_friend_list(user_id)
+              update_friend_requests(user.id)
+              update_friend_list(user.id)
               update_friend_requests(request.inviter_id)
               update_friend_list(request.inviter_id)
               %FriendRequestActionResponse{request_id: msg.request_id}
@@ -389,7 +400,7 @@ defmodule Lobby.ClientConn do
         state
 
       :fetch_friend_list ->
-        update_friend_list(user_id)
+        update_friend_list(user.id)
         state
 
       :remove_friend ->
@@ -399,9 +410,9 @@ defmodule Lobby.ClientConn do
           if other_user == nil do
             %RemoveFriendResponse{error_code: "not_found"}
           else
-            case Friends.remove_friend(user_id, other_user.id) do
+            case Friends.remove_friend(user.id, other_user.id) do
               :ok ->
-                update_friend_list(user_id)
+                update_friend_list(user.id)
                 update_friend_list(other_user.id)
                 %RemoveFriendResponse{}
 
@@ -411,6 +422,32 @@ defmodule Lobby.ClientConn do
           end
 
         send_message(self(), response)
+        state
+
+      :send_private_message ->
+        # TODO: restrict private messages to friends in config
+        # TODO: allow defining content filters in config
+        ClientRegistry.if_online_by_tag(
+          msg.user_tag,
+          fn client_pid ->
+            # TODO: profile cache
+            other_user = Accounts.get_by_user_tag(msg.user_tag) |> Lobby.Repo.preload(:profile)
+
+            send_message(client_pid, %NewPrivateMessage{
+              from: get_user_profile(user),
+              content: msg.content
+            })
+
+            send_message(self(), %NewPrivateMessage{
+              from: get_user_profile(other_user),
+              content: msg.content
+            })
+          end,
+          fn ->
+            send_message(self(), %SystemNotification{content: "User #{msg.user_tag} is offline"})
+          end
+        )
+
         state
 
       type ->
@@ -438,12 +475,16 @@ defmodule Lobby.ClientConn do
     end)
   end
 
-  defp disconnect(%State{conn: conn, user_id: user_id} = state, error_message)
+  defp disconnect(%State{conn: conn, user: user} = state, error_message)
        when is_binary(error_message) do
     message = %FatalError{message: error_message}
     conn = Connection.send_packet(conn, message_to_packet!(message))
     {_, conn} = Connection.flush(conn)
-    ClientRegistry.client_disconnected(user_id)
+
+    if user != nil do
+      ClientRegistry.client_disconnected(user.id)
+    end
+
     Process.send_after(self(), :close, @disconnect_delay_millis)
     %{state | conn: conn}
   end
