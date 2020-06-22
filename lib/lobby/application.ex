@@ -13,7 +13,7 @@ defmodule Lobby.Application do
         :network,
         :ranch_tcp,
         [{:port, 9000}],
-        Lobby.ClientConn,
+        Lobby.ClientConnection,
         []
       )
     ]

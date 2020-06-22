@@ -3,7 +3,6 @@ defmodule Lobby.Protocol.Packet do
   A packet sent to or received from the network
   """
   use Bitwise
-  import Bincode
   import Lobby.Protocol.PacketDefinition
   alias Lobby.UserProfile
   alias Lobby.Friend

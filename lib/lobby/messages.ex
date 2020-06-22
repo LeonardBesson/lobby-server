@@ -5,7 +5,7 @@ defmodule Lobby.Messages do
   """
   require Logger
   import Lobby.MessageHandlers.Utils
-  alias Lobby.ClientConn
+  alias Lobby.BaseClient
 
   register_message_handlers()
 
@@ -14,7 +14,7 @@ defmodule Lobby.Messages do
   associated with its type.
   Returns the updated connection state.
   """
-  def handle(message_type, message, %ClientConn.State{} = state) when is_atom(message_type) do
+  def handle(message_type, message, %BaseClient.State{} = state) when is_atom(message_type) do
     case @message_handlers do
       %{^message_type => handlers} ->
         Enum.reduce(handlers, state, fn handler, state ->

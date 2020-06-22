@@ -38,7 +38,7 @@ defmodule Lobby.Protocol.PacketDecoder do
         {header, _} = ByteStream.peek(stream, header_size)
 
         <<
-          flags::size(8),
+          _flags::size(8),
           type::big-integer-size(type_size),
           header_rest::binary
         >> = header

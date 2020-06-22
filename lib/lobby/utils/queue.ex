@@ -51,7 +51,7 @@ defmodule Lobby.Utils.Queue do
     end
   end
 
-  def length(%__MODULE__{length: length} = queue), do: length
+  def length(%__MODULE__{length: length}), do: length
 
-  def empty?(%__MODULE__{length: length} = queue), do: length == 0
+  def empty?(%__MODULE__{length: length}), do: length == 0
 end

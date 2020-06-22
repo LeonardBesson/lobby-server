@@ -1,35 +1,21 @@
-defmodule Lobby.ClientConn do
+defmodule Lobby.ClientConnection do
   @moduledoc """
   The process handling the client connection. It is the entry point for which messages
   are sent to and receiving from a client.
   """
   use GenServer
-  require Lobby
-  alias Lobby.Accounts
-  alias Lobby.Accounts.User
-  alias Lobby.Bans
-  alias Lobby.Connection
-  alias Lobby.Friends
+  import Lobby.Protocol.Utils
+  import Lobby.BaseClient
+  alias Lobby.BaseClient.State
+  alias Lobby.Transport.Connection
   alias Lobby.ClientRegistry
-  alias Lobby.ProfileCache
   alias Lobby.Protocol.Packet
   alias Lobby.Protocol.Message
-  import Lobby.Protocol.Structs
-  import Lobby.Protocol.Utils
   alias Lobby.Messages
   alias Lobby.Messages.PacketInit
   alias Lobby.Messages.PacketPing
-  alias Lobby.Messages.FatalError
-  alias Lobby.Messages.AuthenticationResponse
-  alias Lobby.Messages.AddFriendRequestResponse
-  alias Lobby.Messages.FetchPendingFriendRequestsResponse
-  alias Lobby.Messages.FetchFriendListResponse
-  alias Lobby.Messages.FriendRequestActionResponse
-  alias Lobby.Messages.RemoveFriendResponse
-  alias Lobby.Messages.NewPrivateMessage
-  alias Lobby.Messages.SystemNotification
   alias Lobby.BufferProcessors.LogBufferProcessor
-  alias Lobby.Utils.Crypto
+  require Lobby
   require Logger
 
   @behaviour :ranch_protocol
@@ -38,32 +24,9 @@ defmodule Lobby.ClientConn do
   @app_version Lobby.compile_env!(:app_version)
 
   @auth_timeout_millis Lobby.compile_env!(:auth_timeout_millis)
-  @disconnect_delay_millis Lobby.compile_env!(:disconnect_delay_millis)
   @ping_interval_millis Lobby.compile_env!(:ping_interval_millis)
   @ping_timeout_millis Lobby.compile_env!(:ping_timeout_millis)
   @round_trip_threshold_warning_millis Lobby.compile_env!(:round_trip_threshold_warning_millis)
-
-  defmodule State do
-    defstruct conn: nil,
-              user: nil,
-              flush_timer: nil,
-              auth_timeout_timer: nil,
-              ping_timer: nil,
-              last_ping_id: nil,
-              last_ping_time: nil,
-              round_trip_ms: nil
-
-    @type t :: %__MODULE__{
-            conn: Connection.t(),
-            user: map,
-            flush_timer: reference,
-            auth_timeout_timer: reference,
-            ping_timer: reference,
-            last_ping_id: String.t(),
-            last_ping_time: DateTime.t(),
-            round_trip_ms: non_neg_integer
-          }
-  end
 
   @doc """
   Starts the handler with `:proc_lib.spawn_link/3`.
@@ -110,14 +73,6 @@ defmodule Lobby.ClientConn do
       conn: conn,
       auth_timeout_timer: auth_timeout_timer
     })
-  end
-
-  def send_message(client, message) do
-    GenServer.cast(client, {:send_message, message})
-  end
-
-  def receive_message(client, message) do
-    GenServer.cast(client, {:receive_message, message})
   end
 
   def schedule_flush(%State{flush_timer: flush_timer} = state) do
@@ -248,7 +203,7 @@ defmodule Lobby.ClientConn do
     end
   end
 
-  defp handle_incoming_message(type, msg, %State{conn: conn, user: user} = state) do
+  defp handle_incoming_message(type, msg, %State{conn: conn} = state) do
     case type do
       :packet_init ->
         cond do
@@ -285,39 +240,6 @@ defmodule Lobby.ClientConn do
       _ ->
         {false, state}
     end
-  end
-
-  defp update_friend_requests(user_id) do
-    ClientRegistry.if_online(user_id, fn client_pid ->
-      {pending_as_inviter, pending_as_invitee} = Friends.fetch_pending_requests(user_id)
-
-      send_message(client_pid, %FetchPendingFriendRequestsResponse{
-        pending_as_inviter: pending_as_inviter,
-        pending_as_invitee: pending_as_invitee
-      })
-    end)
-  end
-
-  defp update_friend_list(user_id) do
-    ClientRegistry.if_online(user_id, fn client_pid ->
-      friend_list = Friends.fetch_friend_list(user_id)
-
-      send_message(client_pid, %FetchFriendListResponse{friend_list: friend_list})
-    end)
-  end
-
-  defp disconnect(%State{conn: conn, user: user} = state, error_message)
-       when is_binary(error_message) do
-    message = %FatalError{message: error_message}
-    conn = Connection.send_packet(conn, message_to_packet!(message))
-    {_, conn} = Connection.flush(conn)
-
-    if user != nil do
-      ClientRegistry.client_disconnected(user.id)
-    end
-
-    Process.send_after(self(), :close, @disconnect_delay_millis)
-    %{state | conn: conn}
   end
 
   defp stringify_peername(socket) do

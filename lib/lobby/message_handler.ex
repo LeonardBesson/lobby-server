@@ -3,7 +3,7 @@ defmodule Lobby.MessageHandler do
   Behaviour representing a module which is interested in various messages
   and can handle them.
   """
-  alias Lobby.ClientConn
+  alias Lobby.BaseClient
 
   @doc """
   Returns the list of message types which can be handled.
@@ -14,16 +14,17 @@ defmodule Lobby.MessageHandler do
   Handle the given message along with connection state from which it is received.
   Returns the new connection state.
   """
-  @callback handle(message_type :: atom, message :: map, state :: ClientConn.State.t()) ::
+  @callback handle(message_type :: atom, message :: map, state :: BaseClient.State.t()) ::
               new_state
-            when new_state: ClientConn.State.t()
+            when new_state: BaseClient.State.t()
 
   defmacro __using__(types) do
-    quote location: :keep, bind_quoted: [types: types] do
+    quote location: :keep do
       @behaviour Lobby.MessageHandler
       @before_compile Lobby.MessageHandler
-      import Lobby.MessageHandlers.Utils
-      alias Lobby.ClientConn.State
+
+      import Lobby.BaseClient
+      alias Lobby.BaseClient.State
       require Logger
 
       def message_types do

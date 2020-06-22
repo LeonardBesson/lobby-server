@@ -1,4 +1,4 @@
-defmodule Lobby.Connection do
+defmodule Lobby.Transport.Connection do
   @moduledoc """
   Represents a physical TCP connection
   """

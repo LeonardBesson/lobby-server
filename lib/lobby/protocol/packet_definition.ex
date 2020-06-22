@@ -17,7 +17,7 @@ defmodule Lobby.Protocol.PacketDefinition do
     packets_by_id = Enum.into(packets, %{}, fn {type, {id, _}} -> {id, type} end)
 
     packet_infos =
-      Enum.into(packets, %{}, fn {type, {id, _}} ->
+      Enum.into(packets, %{}, fn {type, _} ->
         {type,
          %PacketInfo{
            packet_type: type,
@@ -31,19 +31,25 @@ defmodule Lobby.Protocol.PacketDefinition do
     Module.put_attribute(caller_module, :packet_ids, packets_by_id)
     Module.put_attribute(caller_module, :packet_infos, packet_infos)
 
-    for {type, {_, fields}} <- packets do
-      message_module = get_message_module(type)
+    quote do
+      import Bincode
 
-      quote do
-        Bincode.declare_struct(unquote(message_module), unquote(fields), absolute: true)
+      unquote do
+        for {type, {_, fields}} <- packets do
+          message_module = get_message_module(type)
 
-        defimpl Lobby.Protocol.Message, for: unquote(message_module) do
-          def packet_type(_message) do
-            unquote(type)
-          end
+          quote do
+            Bincode.declare_struct(unquote(message_module), unquote(fields), absolute: true)
 
-          def serialize(message) do
-            unquote(message_module).serialize(message)
+            defimpl Lobby.Protocol.Message, for: unquote(message_module) do
+              def packet_type(_message) do
+                unquote(type)
+              end
+
+              def serialize(message) do
+                unquote(message_module).serialize(message)
+              end
+            end
           end
         end
       end

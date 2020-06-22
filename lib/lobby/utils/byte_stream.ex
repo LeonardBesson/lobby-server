@@ -33,14 +33,13 @@ defmodule Lobby.Utils.ByteStream do
 
   def read(%__MODULE__{} = stream, length), do: read(stream, length, false)
 
-  defp read(%__MODULE__{} = stream, length, keep) when length < 0,
+  defp read(%__MODULE__{}, length, _) when length < 0,
     do: raise(ArgumentError, message: "length must be positive")
 
-  defp read(%__MODULE__{} = stream, 0, keep), do: {<<>>, stream}
+  defp read(%__MODULE__{} = stream, 0, _), do: {<<>>, stream}
 
-  defp read(%__MODULE__{buffers: buffers, remaining: remaining} = stream, length, keep)
-       when length > remaining,
-       do: {:insufficient, stream}
+  defp read(%__MODULE__{remaining: remaining} = stream, length, _) when length > remaining,
+    do: {:insufficient, stream}
 
   defp read(%__MODULE__{buffers: buffers, remaining: remaining} = stream, length, keep) do
     {result, new_buffers} = read_internal(buffers, length, <<>>)

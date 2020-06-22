@@ -1,6 +1,6 @@
 defmodule Lobby.Profiles do
   @moduledoc false
-  import Ecto.Query
+  import Ecto.Query, warn: false
   alias Lobby.Profiles.Profile
   alias Lobby.Repo
 

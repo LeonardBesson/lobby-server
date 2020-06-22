@@ -31,7 +31,7 @@ defmodule Lobby.Protocol.Utils do
   def packet_to_message(%Packet{} = packet, message_module) do
     case message_module.deserialize(packet.data) do
       {:ok, {msg, ""}} -> {:ok, msg}
-      {:ok, {msg, rest}} -> {:error, "Packet has too much data"}
+      {:ok, {_msg, _rest}} -> {:error, "Packet has too much data"}
       {:error, msg} -> {:error, msg}
     end
   end
