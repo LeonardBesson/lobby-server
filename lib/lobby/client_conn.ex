@@ -16,6 +16,7 @@ defmodule Lobby.ClientConn do
   alias Lobby.Protocol.Message
   import Lobby.Protocol.Structs
   import Lobby.Protocol.Utils
+  alias Lobby.Messages
   alias Lobby.Messages.PacketInit
   alias Lobby.Messages.PacketPing
   alias Lobby.Messages.FatalError
@@ -41,7 +42,6 @@ defmodule Lobby.ClientConn do
   @ping_interval_millis Lobby.compile_env!(:ping_interval_millis)
   @ping_timeout_millis Lobby.compile_env!(:ping_timeout_millis)
   @round_trip_threshold_warning_millis Lobby.compile_env!(:round_trip_threshold_warning_millis)
-  @reveal_ban_reason Lobby.compile_env!(:reveal_ban_reason)
 
   defmodule State do
     defstruct conn: nil,
@@ -239,7 +239,13 @@ defmodule Lobby.ClientConn do
 
     packet_info = Packet.get!(packet.packet_type)
     msg = packet_to_message!(packet, packet_info.message_module)
-    handle_incoming_message(packet.packet_type, msg, state)
+    {handled, state} = handle_incoming_message(packet.packet_type, msg, state)
+
+    if handled do
+      state
+    else
+      Messages.handle(packet.packet_type, msg, state)
+    end
   end
 
   defp handle_incoming_message(type, msg, %State{conn: conn, user: user} = state) do
@@ -254,12 +260,12 @@ defmodule Lobby.ClientConn do
 
           true ->
             conn = %{conn | state: :authenticating}
-            %{state | conn: conn}
+            {true, %{state | conn: conn}}
         end
 
       :fatal_error ->
         Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
-        state
+        {true, state}
 
       :packet_pong ->
         if msg.id != state.last_ping_id do
@@ -273,198 +279,11 @@ defmodule Lobby.ClientConn do
             Logger.warn("Round trip threshold exceeded: #{round_trip} ms")
           end
 
-          %{state | round_trip_ms: round_trip, last_ping_id: nil}
+          {true, %{state | round_trip_ms: round_trip, last_ping_id: nil}}
         end
 
-      :authentication_request ->
-        if conn.state != :authenticating do
-          disconnect(state, "Packets out of order")
-        else
-          case Accounts.authenticate(msg.email, msg.password) do
-            {:ok, %User{} = user} ->
-              case Bans.validate(user) do
-                {:banned, reason, expire_at} ->
-                  ban_message =
-                    if @reveal_ban_reason do
-                      "Banned until #{expire_at}.\n#{reason}"
-                    else
-                      "Banned until #{expire_at}"
-                    end
-
-                  disconnect(state, ban_message)
-
-                :valid ->
-                  conn = %{conn | state: :running}
-
-                  case ClientRegistry.client_authenticated(user.id, user.user_tag, self()) do
-                    :ok ->
-                      Logger.info("Client registered: (#{user.id} <-> #{inspect(self())}})")
-
-                      case ProfileCache.get_or_create(user.id) do
-                        {:ok, _} ->
-                          if state.auth_timeout_timer != nil do
-                            Process.cancel_timer(state.auth_timeout_timer)
-                          end
-
-                          ping_timer =
-                            Process.send_after(self(), :ping_client, @ping_interval_millis)
-
-                          state = %{
-                            state
-                            | conn: conn,
-                              user: user,
-                              auth_timeout_timer: nil,
-                              ping_timer: ping_timer
-                          }
-
-                          send_message(self(), %AuthenticationResponse{
-                            session_token: Crypto.gen_session_token(),
-                            user_profile: get_user_profile(user)
-                          })
-
-                          state
-
-                        {:error, reason} ->
-                          Logger.error("ProfileCache error: #{inspect(reason)}")
-                          disconnect(state, "Internal error")
-                      end
-
-                    {:error, reason} ->
-                      Logger.error("Could not register client: #{inspect(reason)}")
-                      disconnect(state, "Internal error")
-                  end
-              end
-
-            {:error, _} ->
-              send_message(self(), %AuthenticationResponse{error_code: "invalid_credentials"})
-              state
-          end
-        end
-
-      :add_friend_request ->
-        response =
-          case Accounts.get_by_user_tag(msg.user_tag) do
-            %User{} = invitee ->
-              friend_request_attrs = %{
-                inviter_id: user.id,
-                invitee_id: invitee.id,
-                state: "pending"
-              }
-
-              case Friends.create_friend_request(friend_request_attrs) do
-                {:ok, _} ->
-                  update_friend_requests(invitee.id)
-                  update_friend_requests(user.id)
-
-                  %AddFriendRequestResponse{user_tag: msg.user_tag}
-
-                {:error,
-                 %Ecto.Changeset{
-                   errors: [
-                     inviter_id:
-                       {_,
-                        [
-                          constraint: :unique,
-                          constraint_name: "friend_requests_inviter_id_invitee_id_index"
-                        ]}
-                   ]
-                 }} ->
-                  # Already exists, done
-                  %AddFriendRequestResponse{user_tag: msg.user_tag}
-
-                {:error, _} ->
-                  %AddFriendRequestResponse{user_tag: msg.user_tag, error_code: "not_found"}
-              end
-
-            nil ->
-              Logger.debug("AddFriendRequest for unknown user tag: #{msg.user_tag}")
-              %AddFriendRequestResponse{user_tag: msg.user_tag, error_code: "not_found"}
-          end
-
-        send_message(self(), response)
-        state
-
-      :fetch_pending_friend_requests ->
-        update_friend_requests(user.id)
-        state
-
-      :friend_request_action ->
-        response =
-          case Friends.friend_request_action(msg.request_id, user.id, msg.action) do
-            {:ok, request} ->
-              update_friend_requests(user.id)
-              update_friend_list(user.id)
-              update_friend_requests(request.inviter_id)
-              update_friend_list(request.inviter_id)
-              %FriendRequestActionResponse{request_id: msg.request_id}
-
-            {:error, _} ->
-              %FriendRequestActionResponse{request_id: msg.request_id, error_code: "not_found"}
-          end
-
-        send_message(self(), response)
-        state
-
-      :fetch_friend_list ->
-        update_friend_list(user.id)
-        state
-
-      :remove_friend ->
-        other_user = Accounts.get_by_user_tag(msg.user_tag)
-
-        response =
-          if other_user == nil do
-            %RemoveFriendResponse{error_code: "not_found"}
-          else
-            case Friends.remove_friend(user.id, other_user.id) do
-              :ok ->
-                update_friend_list(user.id)
-                update_friend_list(other_user.id)
-                %RemoveFriendResponse{}
-
-              :error ->
-                %RemoveFriendResponse{error_code: "not_found"}
-            end
-          end
-
-        send_message(self(), response)
-        state
-
-      :send_private_message ->
-        # TODO: restrict private messages to friends in config
-        # TODO: allow defining content filters in config
-        ClientRegistry.if_online_by_tag(
-          msg.user_tag,
-          fn client_pid ->
-            send_message(client_pid, %NewPrivateMessage{
-              profile: get_user_profile(user),
-              content: msg.content,
-              is_self: false
-            })
-
-            case ProfileCache.get_or_create_by_tag(msg.user_tag) do
-              {:ok, other_user_profile} ->
-                send_message(self(), %NewPrivateMessage{
-                  profile: other_user_profile,
-                  content: msg.content,
-                  is_self: true
-                })
-
-              {:error, reason} ->
-                Logger.error("ProfileCache error: #{inspect(reason)}")
-                disconnect(state, "Internal error")
-            end
-          end,
-          fn ->
-            send_message(self(), %SystemNotification{content: "User #{msg.user_tag} is offline"})
-          end
-        )
-
-        state
-
-      type ->
-        Logger.error("Unknown packet type #{type}")
-        state
+      _ ->
+        {false, state}
     end
   end
 

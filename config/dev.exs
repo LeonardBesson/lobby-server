@@ -10,6 +10,9 @@ config :lobby, Lobby.Repo,
   pool_size: 10
 
 config :lobby,
+  raise_on_missing_handler: true
+
+config :lobby,
   ping_interval_millis: 2 * 60_000
 
 config :lobby,

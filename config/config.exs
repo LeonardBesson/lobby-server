@@ -12,6 +12,14 @@ config :lobby,
   generators: [binary_id: true]
 
 config :lobby,
+  message_handlers: [
+    Lobby.MessageHandlers.Auth,
+    Lobby.MessageHandlers.Friends,
+    Lobby.MessageHandlers.Chat
+  ],
+  raise_on_missing_handler: false
+
+config :lobby,
   display_tag_validation: ~r/^[[:alnum:]]{1,16}#[[:digit:]]{4,6}$/
 
 config :lobby,
