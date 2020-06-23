@@ -6,6 +6,19 @@ defmodule Lobby.Friends do
   alias Lobby.Friends.FriendRequest
   alias Lobby.Repo
 
+  def are_friends(user_tag, other_user_tag) do
+    Repo.exists?(
+      from(fr in FriendRequest,
+        join: inviter in assoc(fr, :inviter),
+        join: invitee in assoc(fr, :invitee),
+        where:
+          fr.state == "accepted" and
+            ((inviter.user_tag == ^user_tag and invitee.user_tag == ^other_user_tag) or
+               (inviter.user_tag == ^other_user_tag and invitee.user_tag == ^user_tag))
+      )
+    )
+  end
+
   def remove_friend(user_id, other_user_id) do
     {count, _} =
       from(fr in FriendRequest,

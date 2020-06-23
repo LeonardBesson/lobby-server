@@ -10,9 +10,11 @@ defmodule Lobby.MessageHandlers.Friends do
     :remove_friend
   ]
 
+  alias Lobby.Repo
   alias Lobby.Accounts
   alias Lobby.Accounts.User
   alias Lobby.Friends
+  alias Lobby.FriendsCache
   alias Lobby.ClientRegistry
   alias Lobby.Messages.AddFriendRequestResponse
   alias Lobby.Messages.FetchPendingFriendRequestsResponse
@@ -77,6 +79,8 @@ defmodule Lobby.MessageHandlers.Friends do
           update_friend_list(user.id)
           update_friend_requests(request.inviter_id)
           update_friend_list(request.inviter_id)
+          request = request |> Repo.preload(:inviter)
+          FriendsCache.update(user.user_tag, request.inviter.user_tag, true)
           %FriendRequestActionResponse{request_id: msg.request_id}
 
         {:error, _} ->
@@ -103,6 +107,7 @@ defmodule Lobby.MessageHandlers.Friends do
           :ok ->
             update_friend_list(user.id)
             update_friend_list(other_user.id)
+            FriendsCache.update(user.user_tag, other_user.user_tag, false)
             %RemoveFriendResponse{}
 
           :error ->

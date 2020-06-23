@@ -26,6 +26,9 @@ config :lobby,
   reveal_ban_reason: false
 
 config :lobby,
+  allow_open_private_messages: true
+
+config :lobby,
   auth_timeout_millis: 2 * 60_000,
   disconnect_delay_millis: 100,
   ping_interval_millis: 10_000,
