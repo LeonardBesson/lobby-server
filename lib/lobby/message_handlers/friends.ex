@@ -20,7 +20,7 @@ defmodule Lobby.MessageHandlers.Friends do
   alias Lobby.Messages.FetchFriendListResponse
   alias Lobby.Messages.RemoveFriendResponse
 
-  def handle(:add_friend_request, msg, %State{user: user} = state) do
+  def handle(:add_friend_request, msg, %ClientState{user: user} = state) do
     response =
       case Accounts.get_by_user_tag(msg.user_tag) do
         %User{} = invitee ->
@@ -64,12 +64,12 @@ defmodule Lobby.MessageHandlers.Friends do
     state
   end
 
-  def handle(:fetch_pending_friend_requests, _msg, %State{user: user} = state) do
+  def handle(:fetch_pending_friend_requests, _msg, %ClientState{user: user} = state) do
     update_friend_requests(user.id)
     state
   end
 
-  def handle(:friend_request_action, msg, %State{user: user} = state) do
+  def handle(:friend_request_action, msg, %ClientState{user: user} = state) do
     response =
       case Friends.friend_request_action(msg.request_id, user.id, msg.action) do
         {:ok, request} ->
@@ -87,12 +87,12 @@ defmodule Lobby.MessageHandlers.Friends do
     state
   end
 
-  def handle(:fetch_friend_list, _msg, %State{user: user} = state) do
+  def handle(:fetch_friend_list, _msg, %ClientState{user: user} = state) do
     update_friend_list(user.id)
     state
   end
 
-  def handle(:remove_friend, msg, %State{user: user} = state) do
+  def handle(:remove_friend, msg, %ClientState{user: user} = state) do
     other_user = Accounts.get_by_user_tag(msg.user_tag)
 
     response =

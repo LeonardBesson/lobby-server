@@ -6,7 +6,7 @@ defmodule Lobby.ClientConnection do
   use GenServer
   import Lobby.Protocol.Utils
   import Lobby.BaseClient
-  alias Lobby.BaseClient.State
+  alias Lobby.ClientState
   alias Lobby.Transport.Connection
   alias Lobby.ClientRegistry
   alias Lobby.Protocol.Packet
@@ -69,13 +69,13 @@ defmodule Lobby.ClientConnection do
 
     auth_timeout_timer = Process.send_after(self(), :auth_timeout, @auth_timeout_millis)
 
-    :gen_server.enter_loop(__MODULE__, [], %State{
+    :gen_server.enter_loop(__MODULE__, [], %ClientState{
       conn: conn,
       auth_timeout_timer: auth_timeout_timer
     })
   end
 
-  def schedule_flush(%State{flush_timer: flush_timer} = state) do
+  def schedule_flush(%ClientState{flush_timer: flush_timer} = state) do
     flush_timer =
       if flush_timer == nil do
         Logger.debug("Scheduling flush")
@@ -90,7 +90,7 @@ defmodule Lobby.ClientConnection do
   end
 
   @impl GenServer
-  def handle_cast({:send_message, message}, %State{conn: conn} = state) do
+  def handle_cast({:send_message, message}, %ClientState{conn: conn} = state) do
     Logger.debug("Sending message: #{inspect(message)}")
     packet = message_to_packet!(message)
     conn = Connection.send_packet(conn, packet)
@@ -100,7 +100,7 @@ defmodule Lobby.ClientConnection do
   end
 
   @impl GenServer
-  def handle_cast({:receive_message, message}, %State{} = state) do
+  def handle_cast({:receive_message, message}, %ClientState{} = state) do
     Logger.debug("Received message: #{inspect(message)}")
 
     type = Message.packet_type(message)
@@ -110,7 +110,7 @@ defmodule Lobby.ClientConnection do
   end
 
   @impl GenServer
-  def handle_info({:tcp, _, message}, %State{conn: conn} = state) do
+  def handle_info({:tcp, _, message}, %ClientState{conn: conn} = state) do
     Logger.debug("Received #{inspect(message)} from #{conn.peername}")
 
     conn = Connection.received(conn, message) |> Connection.continue_receiving()
@@ -121,7 +121,7 @@ defmodule Lobby.ClientConnection do
   end
 
   @impl GenServer
-  def handle_info({:tcp_closed, _}, %State{conn: conn, user: user} = state) do
+  def handle_info({:tcp_closed, _}, %ClientState{conn: conn, user: user} = state) do
     Logger.info("Peer #{conn.peername} disconnected")
 
     if user != nil do
@@ -131,7 +131,7 @@ defmodule Lobby.ClientConnection do
     {:stop, :normal, state}
   end
 
-  def handle_info({:tcp_error, _, reason}, %State{conn: conn, user: user} = state) do
+  def handle_info({:tcp_error, _, reason}, %ClientState{conn: conn, user: user} = state) do
     Logger.error("Error with peer #{conn.peername}: #{inspect(reason)}")
 
     if user != nil do
@@ -141,7 +141,7 @@ defmodule Lobby.ClientConnection do
     {:stop, :normal, state}
   end
 
-  def handle_info(:flush, %State{conn: conn} = state) do
+  def handle_info(:flush, %ClientState{conn: conn} = state) do
     Logger.debug("Flushing")
     {incoming_packets, conn} = Connection.flush(conn)
     state = %{state | conn: conn}
@@ -150,7 +150,7 @@ defmodule Lobby.ClientConnection do
     {:noreply, %{state | flush_timer: nil}}
   end
 
-  def handle_info(:ping_client, %State{} = state) do
+  def handle_info(:ping_client, %ClientState{} = state) do
     Logger.debug("Ping triggered")
 
     if state.last_ping_id != nil do
@@ -172,14 +172,14 @@ defmodule Lobby.ClientConnection do
     end
   end
 
-  def handle_info(:auth_timeout, %State{conn: conn} = state) do
+  def handle_info(:auth_timeout, %ClientState{conn: conn} = state) do
     Logger.warn("Auth timed out for peer #{conn.peername}")
     state = disconnect(state, "Authentication timed out")
 
     {:noreply, state}
   end
 
-  def handle_info(:close, %State{conn: conn, user: user} = state) do
+  def handle_info(:close, %ClientState{conn: conn, user: user} = state) do
     conn = Connection.shutdown(conn)
 
     if user != nil do
@@ -189,7 +189,7 @@ defmodule Lobby.ClientConnection do
     {:stop, :normal, %{state | conn: conn}}
   end
 
-  defp handle_incoming_packet(%Packet{} = packet, %State{} = state) do
+  defp handle_incoming_packet(%Packet{} = packet, %ClientState{} = state) do
     Logger.debug("Received incoming packet #{inspect(packet)}")
 
     packet_info = Packet.get!(packet.packet_type)
@@ -203,7 +203,7 @@ defmodule Lobby.ClientConnection do
     end
   end
 
-  defp handle_incoming_message(type, msg, %State{conn: conn} = state) do
+  defp handle_incoming_message(type, msg, %ClientState{conn: conn} = state) do
     case type do
       :packet_init ->
         cond do

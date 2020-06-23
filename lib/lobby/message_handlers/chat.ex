@@ -9,7 +9,7 @@ defmodule Lobby.MessageHandlers.Chat do
   alias Lobby.Messages.NewPrivateMessage
   alias Lobby.Messages.SystemNotification
 
-  def handle(:send_private_message, msg, %State{user: user} = state) do
+  def handle(:send_private_message, msg, %ClientState{user: user} = state) do
     # TODO: restrict private messages to friends in config
     # TODO: allow defining content filters in config
     ClientRegistry.if_online_by_tag(
