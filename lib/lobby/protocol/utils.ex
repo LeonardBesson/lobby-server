@@ -7,7 +7,7 @@ defmodule Lobby.Protocol.Utils do
 
   @spec message_to_packet(Message.t()) :: {:ok, Packet.t()} | {:error, binary}
   def message_to_packet(message) do
-    packet_data = Message.serialize(message)
+    packet_data = Message.serialize(message, varint: true)
 
     case packet_data do
       {:ok, data} ->
@@ -29,7 +29,7 @@ defmodule Lobby.Protocol.Utils do
 
   @spec packet_to_message(Packet.t(), module) :: {:ok, Message.t()} | {:error, binary}
   def packet_to_message(%Packet{} = packet, message_module) do
-    case message_module.deserialize(packet.data) do
+    case message_module.deserialize(packet.data, varint: true) do
       {:ok, {msg, ""}} -> {:ok, msg}
       {:ok, {_msg, _rest}} -> {:error, "Packet has too much data"}
       {:error, msg} -> {:error, msg}

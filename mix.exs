@@ -24,7 +24,7 @@ defmodule Lobby.MixProject do
   defp deps do
     [
       {:ranch, "~> 2.0.0-rc.2"},
-      {:bincode, "~> 0.2"},
+      {:bincode, "~> 0.3"},
       {:ecto_sql, "~> 3.0"},
       {:postgrex, ">= 0.0.0"},
       {:bcrypt_elixir, "~> 2.2"}

@@ -32,22 +32,22 @@ defmodule Lobby.Protocol.PacketDefinition do
     Module.put_attribute(caller_module, :packet_infos, packet_infos)
 
     quote do
-      import Bincode
+      require Bincode.Structs
 
       unquote do
         for {type, {_, fields}} <- packets do
           message_module = get_message_module(type)
 
           quote do
-            Bincode.declare_struct(unquote(message_module), unquote(fields), absolute: true)
+            Bincode.Structs.declare_struct(unquote(message_module), unquote(fields), absolute: true)
 
             defimpl Lobby.Protocol.Message, for: unquote(message_module) do
               def packet_type(_message) do
                 unquote(type)
               end
 
-              def serialize(message) do
-                unquote(message_module).serialize(message)
+              def serialize(message, opts \\ []) do
+                unquote(message_module).serialize(message, opts)
               end
             end
           end

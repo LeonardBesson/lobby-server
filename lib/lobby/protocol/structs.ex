@@ -2,7 +2,7 @@ defmodule Lobby.Protocol.Structs do
   @moduledoc """
   Structs used in messages
   """
-  import Bincode
+  import Bincode.Structs
   alias Lobby.ClientRegistry
   alias Lobby.Accounts.User
   alias Lobby.Friends.FriendRequest

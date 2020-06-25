@@ -13,6 +13,6 @@ defprotocol Lobby.Protocol.Message do
   @doc """
   Serialize the message into a binary
   """
-  @spec serialize(t) :: binary
-  def serialize(message)
+  @spec serialize(t, list) :: binary
+  def serialize(message, opts)
 end
