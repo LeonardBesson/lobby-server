@@ -10,8 +10,6 @@ defmodule Lobby.ClientConnection do
   alias Lobby.Transport.Connection
   alias Lobby.ClientRegistry
   alias Lobby.Protocol.Packet
-  alias Lobby.Protocol.Message
-  alias Lobby.Messages
   alias Lobby.Messages.PacketInit
   alias Lobby.Messages.PacketPing
   alias Lobby.BufferProcessors.LogBufferProcessor
@@ -22,11 +20,9 @@ defmodule Lobby.ClientConnection do
 
   @protocol_version Lobby.compile_env!(:protocol_version)
   @app_version Lobby.compile_env!(:app_version)
-
   @auth_timeout_millis Lobby.compile_env!(:auth_timeout_millis)
   @ping_interval_millis Lobby.compile_env!(:ping_interval_millis)
   @ping_timeout_millis Lobby.compile_env!(:ping_timeout_millis)
-  @round_trip_threshold_warning_millis Lobby.compile_env!(:round_trip_threshold_warning_millis)
 
   @doc """
   Starts the handler with `:proc_lib.spawn_link/3`.
@@ -59,54 +55,35 @@ defmodule Lobby.ClientConnection do
       Connection.new(socket, transport, peername)
       |> Connection.add_buffer_processor(%LogBufferProcessor{})
 
-    # Init handshake
-    packet_init = %PacketInit{
-      protocol_version: @protocol_version,
-      app_version: @app_version
-    }
-
-    send_message(self(), packet_init)
-
     auth_timeout_timer = Process.send_after(self(), :auth_timeout, @auth_timeout_millis)
 
-    :gen_server.enter_loop(__MODULE__, [], %ClientState{
+    state = %ClientState{
       conn: conn,
       auth_timeout_timer: auth_timeout_timer
-    })
-  end
+    }
 
-  def schedule_flush(%ClientState{flush_timer: flush_timer} = state) do
-    flush_timer =
-      if flush_timer == nil do
-        Logger.debug("Scheduling flush")
-        send(self(), :flush)
-        make_ref()
-      else
-        Logger.debug("Flush already scheduled")
-        flush_timer
-      end
+    # Init handshake
+    state =
+      send_message(state, %PacketInit{
+        protocol_version: @protocol_version,
+        app_version: @app_version
+      })
 
-    %{state | flush_timer: flush_timer}
+    :gen_server.enter_loop(__MODULE__, [], state)
   end
 
   @impl GenServer
-  def handle_cast({:send_message, message}, %ClientState{conn: conn} = state) do
-    Logger.debug("Sending message: #{inspect(message)}")
-    packet = message_to_packet!(message)
-    conn = Connection.send_packet(conn, packet)
-    state = schedule_flush(state)
+  def handle_call({:send_message, message}, _, %ClientState{} = state) do
+    state = send_message(state, message)
 
-    {:noreply, %{state | conn: conn}}
+    {:reply, :ok, state}
   end
 
   @impl GenServer
-  def handle_cast({:receive_message, message}, %ClientState{} = state) do
-    Logger.debug("Received message: #{inspect(message)}")
+  def handle_call({:receive_message, message}, _, %ClientState{} = state) do
+    state = receive_message(state, message)
 
-    type = Message.packet_type(message)
-    state = handle_incoming_message(type, message, state)
-
-    {:noreply, state}
+    {:reply, :ok, state}
   end
 
   @impl GenServer
@@ -144,10 +121,10 @@ defmodule Lobby.ClientConnection do
   def handle_info(:flush, %ClientState{conn: conn} = state) do
     Logger.debug("Flushing")
     {incoming_packets, conn} = Connection.flush(conn)
-    state = %{state | conn: conn}
+    state = %{state | conn: conn, flush_timer: nil}
     state = Enum.reduce(incoming_packets, state, &handle_incoming_packet/2)
 
-    {:noreply, %{state | flush_timer: nil}}
+    {:noreply, state}
   end
 
   def handle_info(:ping_client, %ClientState{} = state) do
@@ -166,7 +143,10 @@ defmodule Lobby.ClientConnection do
     else
       now = DateTime.utc_now()
       id = Ecto.UUID.generate()
-      send_message(self(), %PacketPing{id: id, peer_time: DateTime.to_unix(now, :millisecond)})
+
+      state =
+        send_message(state, %PacketPing{id: id, peer_time: DateTime.to_unix(now, :millisecond)})
+
       ping_timer = Process.send_after(self(), :ping_client, @ping_interval_millis)
       {:noreply, %{state | ping_timer: ping_timer, last_ping_id: id, last_ping_time: now}}
     end
@@ -194,52 +174,7 @@ defmodule Lobby.ClientConnection do
 
     packet_info = Packet.get!(packet.packet_type)
     msg = packet_to_message!(packet, packet_info.message_module)
-    {handled, state} = handle_incoming_message(packet.packet_type, msg, state)
-
-    if handled do
-      state
-    else
-      Messages.handle(packet.packet_type, msg, state)
-    end
-  end
-
-  defp handle_incoming_message(type, msg, %ClientState{conn: conn} = state) do
-    case type do
-      :packet_init ->
-        cond do
-          msg.protocol_version != @protocol_version ->
-            disconnect(state, "Invalid protocol version #{msg.protocol_version}")
-
-          msg.app_version != @app_version ->
-            disconnect(state, "Invalid application version #{msg.protocol_version}")
-
-          true ->
-            conn = %{conn | state: :authenticating}
-            {true, %{state | conn: conn}}
-        end
-
-      :fatal_error ->
-        Logger.error("Fatal error from peer #{conn.peername}: #{msg.message}")
-        {true, state}
-
-      :packet_pong ->
-        if msg.id != state.last_ping_id do
-          Logger.error("Ping/Pong ID mismatch")
-          state
-        else
-          now = DateTime.utc_now()
-          round_trip = DateTime.diff(now, state.last_ping_time, :millisecond)
-
-          if round_trip > @round_trip_threshold_warning_millis do
-            Logger.warn("Round trip threshold exceeded: #{round_trip} ms")
-          end
-
-          {true, %{state | round_trip_ms: round_trip, last_ping_id: nil}}
-        end
-
-      _ ->
-        {false, state}
-    end
+    handle_incoming_message(packet.packet_type, msg, state)
   end
 
   defp stringify_peername(socket) do

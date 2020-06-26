@@ -63,12 +63,10 @@ defmodule Lobby.MessageHandlers.Auth do
                         ping_timer: ping_timer
                     }
 
-                    send_message(self(), %AuthenticationResponse{
+                    send_message(state, %AuthenticationResponse{
                       session_token: Crypto.gen_session_token(),
                       user_profile: get_user_profile(user)
                     })
-
-                    state
 
                   {:error, reason} ->
                     Logger.error("ProfileCache error: #{inspect(reason)}")
@@ -82,8 +80,7 @@ defmodule Lobby.MessageHandlers.Auth do
         end
 
       {:error, _} ->
-        send_message(self(), %AuthenticationResponse{error_code: "invalid_credentials"})
-        state
+        send_message(state, %AuthenticationResponse{error_code: "invalid_credentials"})
     end
   end
 end

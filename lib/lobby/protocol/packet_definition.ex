@@ -39,7 +39,9 @@ defmodule Lobby.Protocol.PacketDefinition do
           message_module = get_message_module(type)
 
           quote do
-            Bincode.Structs.declare_struct(unquote(message_module), unquote(fields), absolute: true)
+            Bincode.Structs.declare_struct(unquote(message_module), unquote(fields),
+              absolute: true
+            )
 
             defimpl Lobby.Protocol.Message, for: unquote(message_module) do
               def packet_type(_message) do
