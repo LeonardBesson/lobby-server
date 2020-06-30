@@ -31,6 +31,13 @@ defmodule Lobby.ProfileCache do
     end)
   end
 
+  def get_or_create!(user_id) do
+    case get_or_create(user_id) do
+      {:ok, profile} -> profile
+      {:error, reason} -> throw(reason)
+    end
+  end
+
   def get_or_create_by_tag(user_tag) do
     mnesia_transaction(fn ->
       case :mnesia.index_read(@table_name, user_tag, :user_tag) do
@@ -41,6 +48,13 @@ defmodule Lobby.ProfileCache do
           create_by(user_tag: user_tag)
       end
     end)
+  end
+
+  def get_or_create_by_tag!(user_tag) do
+    case get_or_create_by_tag(user_tag) do
+      {:ok, profile} -> profile
+      {:error, reason} -> throw(reason)
+    end
   end
 
   defp create_by(clauses) do

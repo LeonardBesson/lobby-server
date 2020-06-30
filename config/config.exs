@@ -15,7 +15,8 @@ config :lobby,
   message_handlers: [
     Lobby.MessageHandlers.Auth,
     Lobby.MessageHandlers.Friends,
-    Lobby.MessageHandlers.Chat
+    Lobby.MessageHandlers.Chat,
+    Lobby.MessageHandlers.Lobbies
   ],
   raise_on_missing_handler: false
 
@@ -27,6 +28,9 @@ config :lobby,
 
 config :lobby,
   allow_open_private_messages: true
+
+config :lobby,
+  lobby_default_max_size: 8
 
 config :lobby,
   auth_timeout_millis: 2 * 60_000,

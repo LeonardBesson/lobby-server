@@ -1,5 +1,7 @@
 defmodule Lobby.Utils.Mnesia do
-  @moduledoc false
+  @moduledoc """
+  Utils to make the Mnesia API more Elixir friendly.
+  """
 
   def mnesia_transaction(transaction) when is_function(transaction, 0) do
     case :mnesia.transaction(fn -> transaction.() end) do

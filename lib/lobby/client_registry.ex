@@ -6,11 +6,9 @@ defmodule Lobby.ClientRegistry do
 
   @table_name ClientRegistryEntry
 
-  def table_name, do: @table_name
-
   def create_table do
     {:atomic, :ok} =
-      :mnesia.create_table(@table_name, attributes: [:user_id, :user_tag, :conn_pid])
+      :mnesia.create_table(@table_name, attributes: [:user_id, :user_tag, :conn_pid, :lobby_id])
 
     {:atomic, :ok} = :mnesia.add_table_index(@table_name, :user_tag)
 
@@ -20,7 +18,7 @@ defmodule Lobby.ClientRegistry do
   def client_authenticated(user_id, user_tag, conn_pid)
       when is_binary(user_id) and is_pid(conn_pid) do
     result =
-      mnesia_transaction(fn -> :mnesia.write({@table_name, user_id, user_tag, conn_pid}) end)
+      mnesia_transaction(fn -> :mnesia.write({@table_name, user_id, user_tag, conn_pid, nil}) end)
 
     case result do
       {:ok, :ok} -> :ok
@@ -43,7 +41,8 @@ defmodule Lobby.ClientRegistry do
     result = mnesia_transaction(fn -> :mnesia.read({@table_name, user_id}) end)
 
     case result do
-      {:ok, [{@table_name, ^user_id, _, conn_pid}]} -> {:ok, conn_pid}
+      {:ok, []} -> {:ok, nil}
+      {:ok, [{@table_name, ^user_id, _, conn_pid, _}]} -> {:ok, conn_pid}
       _ -> result
     end
   end
@@ -59,13 +58,68 @@ defmodule Lobby.ClientRegistry do
     result = mnesia_transaction(fn -> :mnesia.index_read(@table_name, user_tag, :user_tag) end)
 
     case result do
-      {:ok, [{@table_name, _, ^user_tag, conn_pid}]} -> {:ok, conn_pid}
+      {:ok, []} -> {:ok, nil}
+      {:ok, [{@table_name, _, ^user_tag, conn_pid, _}]} -> {:ok, conn_pid}
       _ -> result
     end
   end
 
   def whereis_by_tag!(user_tag) do
     case whereis_by_tag(user_tag) do
+      {:ok, res} -> res
+      {:error, reason} -> throw(reason)
+    end
+  end
+
+  def set_lobby_id(user_tag, lobby_id) do
+    result =
+      mnesia_transaction(fn ->
+        case :mnesia.index_read(@table_name, user_tag, :user_tag) do
+          [] ->
+            Logger.error("Trying to set lobby id for offline player")
+            :user_offline
+
+          [{@table_name, user_id, ^user_tag, conn_pid, _}] ->
+            :mnesia.write({@table_name, user_id, user_tag, conn_pid, lobby_id})
+        end
+      end)
+
+    case result do
+      {:ok, :ok} -> :ok
+      {:error, reason} -> {:error, reason}
+      reason -> {:error, reason}
+    end
+  end
+
+  def get_lobby_id(user_id) when is_binary(user_id) do
+    result = mnesia_transaction(fn -> :mnesia.read({@table_name, user_id}) end)
+
+    case result do
+      {:ok, []} -> {:ok, nil}
+      {:ok, [{@table_name, ^user_id, _, _, lobby_id}]} -> {:ok, lobby_id}
+      _ -> result
+    end
+  end
+
+  def get_lobby_id!(user_id) do
+    case get_lobby_id(user_id) do
+      {:ok, res} -> res
+      {:error, reason} -> throw(reason)
+    end
+  end
+
+  def get_lobby_id_by_tag(user_tag) when is_binary(user_tag) do
+    result = mnesia_transaction(fn -> :mnesia.index_read(@table_name, user_tag, :user_tag) end)
+
+    case result do
+      {:ok, []} -> {:ok, nil}
+      {:ok, [{@table_name, _, ^user_tag, _, lobby_id}]} -> {:ok, lobby_id}
+      _ -> result
+    end
+  end
+
+  def get_lobby_id_by_tag!(user_tag) do
+    case get_lobby_id_by_tag(user_tag) do
       {:ok, res} -> res
       {:error, reason} -> throw(reason)
     end

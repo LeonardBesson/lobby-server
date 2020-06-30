@@ -44,7 +44,9 @@ defmodule Lobby.Protocol.Packet do
     remove_friend_response: {15, [error_code: {:option, :string}]},
     send_private_message: {16, [user_tag: :string, content: :string]},
     new_private_message: {17, [profile: UserProfile, content: :string, is_self: :bool]},
-    system_notification: {18, [content: :string]}
+    system_notification: {18, [content: :string]},
+    invite_user: {19, [user_tag: :string]},
+    lobby_invite: {20, [inviter: UserProfile]}
   )
 
   @flag_fixed_header 1 <<< 7
