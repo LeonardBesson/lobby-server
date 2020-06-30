@@ -7,6 +7,7 @@ defmodule Lobby.Application do
   alias Lobby.ProfileCache
   alias Lobby.FriendsCache
   alias Lobby.LobbyRegistry
+  alias Lobby.LobbyInviteCache
 
   def start(_type, _args) do
     children = [
@@ -31,9 +32,12 @@ defmodule Lobby.Application do
     :mnesia.start()
 
     tables =
-      Enum.map([ClientRegistry, ProfileCache, FriendsCache, LobbyRegistry], fn mod ->
-        mod.create_table()
-      end)
+      Enum.map(
+        [ClientRegistry, ProfileCache, FriendsCache, LobbyRegistry, LobbyInviteCache],
+        fn mod ->
+          mod.create_table()
+        end
+      )
 
     :ok = :mnesia.wait_for_tables(tables, :timer.seconds(15))
     Logger.debug("Mnesia initialized")

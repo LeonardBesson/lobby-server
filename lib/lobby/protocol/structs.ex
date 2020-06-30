@@ -76,4 +76,6 @@ defmodule Lobby.Protocol.Structs do
   end
 
   def get_friend(_), do: nil
+
+  declare_enum(Lobby.LobbyInviteAction, [Accept: [], Decline: []], absolute: true)
 end

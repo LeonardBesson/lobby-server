@@ -8,6 +8,7 @@ defmodule Lobby.Protocol.Packet do
   alias Lobby.Friend
   alias Lobby.FriendRequestAction
   alias Lobby.FriendRequest
+  alias Lobby.LobbyInviteAction
 
   defstruct flags: 0, packet_type: 0, data: <<>>
 
@@ -46,7 +47,8 @@ defmodule Lobby.Protocol.Packet do
     new_private_message: {17, [profile: UserProfile, content: :string, is_self: :bool]},
     system_notification: {18, [content: :string]},
     invite_user: {19, [user_tag: :string]},
-    lobby_invite: {20, [inviter: UserProfile]}
+    lobby_invite: {20, [id: :string, inviter: UserProfile]},
+    lobby_invite_action: {21, [invite_id: :string, action: LobbyInviteAction]}
   )
 
   @flag_fixed_header 1 <<< 7
