@@ -48,7 +48,9 @@ defmodule Lobby.Protocol.Packet do
     system_notification: {18, [content: :string]},
     invite_user: {19, [user_tag: :string]},
     lobby_invite: {20, [id: :string, inviter: UserProfile]},
-    lobby_invite_action: {21, [invite_id: :string, action: LobbyInviteAction]}
+    lobby_invite_action: {21, [invite_id: :string, action: LobbyInviteAction]},
+    new_lobby_message:
+      {22, [lobby_id: :string, profile: {:option, UserProfile}, content: :string]}
   )
 
   @flag_fixed_header 1 <<< 7

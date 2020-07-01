@@ -7,6 +7,7 @@ defmodule Lobby.Lobbies.LobbyServer do
   alias Lobby.LobbyRegistry
   alias Lobby.ClientRegistry
   alias Lobby.Messages.SystemNotification
+  alias Lobby.Messages.NewLobbyMessage
   require Logger
   require Lobby
 
@@ -46,6 +47,8 @@ defmodule Lobby.Lobbies.LobbyServer do
         {:stop, reason}
     end
   end
+
+  # TODO: chat
 
   def add_member_validated(lobby, inviter, invitee, role \\ :member) when role in @valid_roles do
     GenServer.call(lobby, {:add_member_validated, inviter, invitee, role})
@@ -143,9 +146,8 @@ defmodule Lobby.Lobbies.LobbyServer do
       :ok ->
         members = Map.put(members, user_tag, role)
         Logger.debug("Member #{user_tag} added as #{role} to lobby #{state.id}")
-        # TODO: this should be a chat message instead of notification
         state = %{state | members: members}
-        broadcast_system_notification("User #{user_tag} joined", state)
+        broadcast_system_message("User #{user_tag} joined", state)
         {:ok, state}
 
       {:error, reason} ->
@@ -157,6 +159,17 @@ defmodule Lobby.Lobbies.LobbyServer do
     broadcast_message(%SystemNotification{content: content}, state)
   end
 
+  defp broadcast_system_message(content, state) do
+    broadcast_message(nil, content, state)
+  end
+
+  defp broadcast_message(from_profile, content, %{id: id, members: members} = state) do
+    broadcast_message(
+      %NewLobbyMessage{lobby_id: id, profile: from_profile, content: content},
+      state
+    )
+  end
+
   defp broadcast_message(message, %{members: members} = state) do
     Enum.each(members, fn {user_tag, _} ->
       ClientRegistry.if_online_by_tag(user_tag, fn client_pid ->
@@ -164,8 +177,6 @@ defmodule Lobby.Lobbies.LobbyServer do
       end)
     end)
   end
-
-  # TODO: chat
 
   defp is_leader?(user_tag, %{members: members} = state) do
     case members do
