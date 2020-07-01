@@ -3,9 +3,10 @@ defmodule Lobby.Lobbies.LobbyServer do
   Process representing a "lobby". A group of users queuing for a game.
   """
   use GenServer
-  import Lobby.Utils.Mnesia
+  import Lobby.BaseClient
   alias Lobby.LobbyRegistry
   alias Lobby.ClientRegistry
+  alias Lobby.Messages.SystemNotification
   require Logger
   require Lobby
 
@@ -46,8 +47,14 @@ defmodule Lobby.Lobbies.LobbyServer do
     end
   end
 
-  def add_member(lobby, inviter, invitee, role \\ :member) when role in @valid_roles do
-    GenServer.call(lobby, {:add_member, inviter, invitee, role})
+  def add_member_validated(lobby, inviter, invitee, role \\ :member) when role in @valid_roles do
+    GenServer.call(lobby, {:add_member_validated, inviter, invitee, role})
+  end
+
+  def add_member_validated(_, _, _, role), do: {:error, :invalid_role}
+
+  def add_member(lobby, invitee, role \\ :member) when role in @valid_roles do
+    GenServer.call(lobby, {:add_member, invitee, role})
   end
 
   def add_member(_, _, _, role), do: {:error, :invalid_role}
@@ -66,20 +73,23 @@ defmodule Lobby.Lobbies.LobbyServer do
   end
 
   @impl true
-  def handle_call({:add_member, inviter, invitee, role}, _, %{id: id, members: members} = state) do
+  def handle_call(
+        {:add_member_validated, inviter, invitee, role},
+        _,
+        %{id: id, members: members} = state
+      ) do
     if can_invite?(inviter, state) do
-      case ClientRegistry.set_lobby_id(invitee, id) do
-        :ok ->
-          members = Map.put(members, invitee, role)
-          Logger.debug("Member #{invitee} added as #{role} to lobby #{state.id}")
-          {:reply, :ok, %{state | members: members}}
-
-        {:error, reason} ->
-          {:reply, {:error, reason}, state}
-      end
+      {res, state} = add_member_internal(invitee, role, state)
+      {:reply, res, state}
     else
       {:reply, {:error, :not_leader}, state}
     end
+  end
+
+  @impl true
+  def handle_call({:add_member, invitee, role}, _, state) do
+    {res, state} = add_member_internal(invitee, role, state)
+    {:reply, res, state}
   end
 
   @impl true
@@ -127,6 +137,35 @@ defmodule Lobby.Lobbies.LobbyServer do
         :ok
     end
   end
+
+  defp add_member_internal(user_tag, role, %{id: id, members: members} = state) do
+    case ClientRegistry.set_lobby_id(user_tag, id) do
+      :ok ->
+        members = Map.put(members, user_tag, role)
+        Logger.debug("Member #{user_tag} added as #{role} to lobby #{state.id}")
+        # TODO: this should be a chat message instead of notification
+        state = %{state | members: members}
+        broadcast_system_notification("User #{user_tag} joined", state)
+        {:ok, state}
+
+      {:error, reason} ->
+        {{:error, reason}, state}
+    end
+  end
+
+  defp broadcast_system_notification(content, state) do
+    broadcast_message(%SystemNotification{content: content}, state)
+  end
+
+  defp broadcast_message(message, %{members: members} = state) do
+    Enum.each(members, fn {user_tag, _} ->
+      ClientRegistry.if_online_by_tag(user_tag, fn client_pid ->
+        send_message(client_pid, message)
+      end)
+    end)
+  end
+
+  # TODO: chat
 
   defp is_leader?(user_tag, %{members: members} = state) do
     case members do

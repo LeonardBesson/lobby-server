@@ -66,4 +66,19 @@ defmodule Lobby.LobbyRegistry do
       {:error, reason} -> throw(reason)
     end
   end
+
+  def if_online(lobby_id, callback, offline_callback \\ nil)
+      when is_function(callback, 1) and is_function(offline_callback, 0) do
+    case whereis(lobby_id) do
+      {:ok, lobby_pid} when is_pid(lobby_pid) ->
+        {:ok, callback.(lobby_pid)}
+
+      _ ->
+        if offline_callback == nil do
+          {:error, :offline}
+        else
+          {:error, offline_callback.()}
+        end
+    end
+  end
 end

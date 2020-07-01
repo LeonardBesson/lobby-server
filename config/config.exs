@@ -30,7 +30,9 @@ config :lobby,
   allow_open_private_messages: true
 
 config :lobby,
-  lobby_default_max_size: 8
+  lobby_default_max_size: 8,
+  lobby_invite_expiry_millis: 2 * 60_000,
+  lobby_invite_notify_inviter_on_decline: true
 
 config :lobby,
   auth_timeout_millis: 2 * 60_000,
