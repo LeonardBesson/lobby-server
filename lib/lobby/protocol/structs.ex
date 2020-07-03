@@ -78,4 +78,11 @@ defmodule Lobby.Protocol.Structs do
   def get_friend(_), do: nil
 
   declare_enum(Lobby.LobbyInviteAction, [Accept: [], Decline: []], absolute: true)
+  declare_enum(Lobby.LobbyRole, [Leader: [], Member: []], absolute: true)
+
+  declare_struct(
+    Lobby.LobbyMember,
+    [user_profile: Lobby.UserProfile, role: Lobby.LobbyRole, is_online: :bool],
+    absolute: true
+  )
 end

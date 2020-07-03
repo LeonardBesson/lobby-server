@@ -118,7 +118,7 @@ defmodule Lobby.MessageHandlers.Lobbies do
             if @lobby_invite_notify_inviter_on_decline do
               ClientRegistry.if_online_by_tag(inviter, fn client_pid ->
                 send_message(client_pid, %SystemNotification{
-                  content: "User #{user.user_tag} refused your invitation"
+                  content: "User #{user.user_tag} declined your invitation"
                 })
               end)
             end

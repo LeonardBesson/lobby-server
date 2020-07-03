@@ -5,9 +5,15 @@ defmodule Lobby.Lobbies.LobbyServer do
   use GenServer
   import Lobby.BaseClient
   alias Lobby.LobbyRegistry
+  alias Lobby.ProfileCache
   alias Lobby.ClientRegistry
+  alias Lobby.LobbyRole
+  alias Lobby.LobbyMember
   alias Lobby.Messages.SystemNotification
   alias Lobby.Messages.NewLobbyMessage
+  alias Lobby.Messages.LobbyMemberUpdate
+  alias Lobby.Messages.LobbyJoined
+  alias Lobby.Messages.LobbyLeft
   require Logger
   require Lobby
 
@@ -35,8 +41,19 @@ defmodule Lobby.Lobbies.LobbyServer do
         Logger.debug("LobbyServer (#{id} <-> #{inspect(self())}) registered")
 
         case ClientRegistry.set_lobby_id(leader, id) do
-          :ok -> {:ok, saved_state || default_state.()}
-          :error -> {:stop, "Could not set lobby id for leader #{leader}"}
+          :ok ->
+            state = saved_state || default_state.()
+            broadcast_message(%LobbyJoined{lobby_id: id}, state)
+
+            broadcast_message(
+              %LobbyMemberUpdate{lobby_id: id, members: members_with_profile(state.members)},
+              state
+            )
+
+            {:ok, state}
+
+          :error ->
+            {:stop, "Could not set lobby id for leader #{leader}"}
         end
 
       {:error, reason} ->
@@ -64,6 +81,10 @@ defmodule Lobby.Lobbies.LobbyServer do
 
   def remove_member(lobby, inviter, invitee) do
     GenServer.call(lobby, {:remove_member, inviter, invitee})
+  end
+
+  def get_members(lobby) do
+    GenServer.call(lobby, :get_members)
   end
 
   def open_invites?(lobby) do
@@ -118,6 +139,11 @@ defmodule Lobby.Lobbies.LobbyServer do
   end
 
   @impl true
+  def handle_call(:get_members, _, %{members: members} = state) do
+    {:reply, members, state}
+  end
+
+  @impl true
   def handle_call(:get_opts, _, %{opts: opts} = state) do
     {:reply, opts, state}
   end
@@ -130,6 +156,7 @@ defmodule Lobby.Lobbies.LobbyServer do
   @impl true
   def terminate(reason, %{id: id} = state) do
     Logger.debug("LobbyServer #{id} down: #{inspect(reason)}")
+    broadcast_message(%LobbyLeft{lobby_id: id}, state)
 
     case LobbyRegistry.lobby_terminating(id, state) do
       {:error, reason} ->
@@ -147,6 +174,13 @@ defmodule Lobby.Lobbies.LobbyServer do
         members = Map.put(members, user_tag, role)
         Logger.debug("Member #{user_tag} added as #{role} to lobby #{state.id}")
         state = %{state | members: members}
+        send_to_member(user_tag, %LobbyJoined{lobby_id: id})
+
+        broadcast_message(
+          %LobbyMemberUpdate{lobby_id: id, members: members_with_profile(members)},
+          state
+        )
+
         broadcast_system_message("User #{user_tag} joined", state)
         {:ok, state}
 
@@ -172,9 +206,13 @@ defmodule Lobby.Lobbies.LobbyServer do
 
   defp broadcast_message(message, %{members: members} = state) do
     Enum.each(members, fn {user_tag, _} ->
-      ClientRegistry.if_online_by_tag(user_tag, fn client_pid ->
-        send_message(client_pid, message)
-      end)
+      send_to_member(user_tag, message)
+    end)
+  end
+
+  defp send_to_member(user_tag, message) when is_binary(user_tag) do
+    ClientRegistry.if_online_by_tag(user_tag, fn client_pid ->
+      send_message(client_pid, message)
     end)
   end
 
@@ -195,6 +233,19 @@ defmodule Lobby.Lobbies.LobbyServer do
   defp can_invite?(user_tag, %{opts: opts} = state) do
     Keyword.get(opts, :open_invites, false) or is_leader?(user_tag, state)
   end
+
+  defp members_with_profile(members) do
+    Enum.map(members, fn {user_tag, role} ->
+      %LobbyMember{
+        user_profile: ProfileCache.get_or_create_by_tag!(user_tag),
+        role: get_role(role),
+        is_online: ClientRegistry.is_online_by_tag(user_tag)
+      }
+    end)
+  end
+
+  defp get_role(:leader), do: %LobbyRole.Leader{}
+  defp get_role(:member), do: %LobbyRole.Member{}
 
   def child_spec(arg) do
     %{
