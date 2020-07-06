@@ -12,7 +12,7 @@ Central game lobby server written in Elixir
 - [x] User bans
 - [x] Lobbies
 - [x] Friend lists
-- [ ] Group chat
+- [x] Group chat
 - [x] Private chat
 - [ ] Server browsing
 - [ ] Matchmaking
