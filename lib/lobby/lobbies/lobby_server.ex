@@ -22,7 +22,8 @@ defmodule Lobby.Lobbies.LobbyServer do
   @default_opts [
     open_invites: false,
     max_size: Lobby.compile_env!(:lobby_default_max_size),
-    max_message_history: 250
+    max_message_history: 250,
+    health_check_interval_ms: Lobby.compile_env!(:lobby_health_check_interval_ms)
   ]
 
   def start_link(id, leader, opts) do
@@ -33,7 +34,7 @@ defmodule Lobby.Lobbies.LobbyServer do
   def init([id, leader, opts]) do
     default_state = fn ->
       opts = Keyword.merge(@default_opts, opts)
-      %{id: id, members: %{leader => :leader}, opts: opts}
+      %{id: id, members: %{leader => :leader}, messages: [], opts: opts}
     end
 
     case LobbyRegistry.register_lobby(id, self()) do
@@ -44,12 +45,8 @@ defmodule Lobby.Lobbies.LobbyServer do
           :ok ->
             state = saved_state || default_state.()
             broadcast_message(%LobbyJoined{lobby_id: id}, state)
-
-            broadcast_message(
-              %LobbyMemberUpdate{lobby_id: id, members: members_with_profile(state.members)},
-              state
-            )
-
+            broadcast_members_update(state)
+            Process.send_after(self(), :health_check, state.opts[:health_check_interval_ms])
             {:ok, state}
 
           :error ->
@@ -94,6 +91,14 @@ defmodule Lobby.Lobbies.LobbyServer do
 
   def can_user_invite?(lobby, user_tag) do
     GenServer.call(lobby, {:can_user_invite, user_tag})
+  end
+
+  def member_presence_update(lobby, user_tag, is_online) do
+    GenServer.call(lobby, {:member_presence_update, user_tag, is_online})
+  end
+
+  def new_message(lobby, user_tag, content) do
+    GenServer.call(lobby, {:new_message, user_tag, content})
   end
 
   @impl true
@@ -154,17 +159,94 @@ defmodule Lobby.Lobbies.LobbyServer do
   end
 
   @impl true
+  def handle_call({:member_presence_update, user_tag, is_online}, _, %{members: members} = state) do
+    case members do
+      %{^user_tag => _} ->
+        broadcast_members_update(state)
+
+        Logger.debug(
+          "LobbyServer member #{user_tag} is now #{if is_online, do: "online", else: "offline"}"
+        )
+
+        {:reply, :ok, state}
+
+      _ ->
+        {:reply, :ok, state}
+    end
+  end
+
+  @impl true
+  def handle_call(
+        {:new_message, user_tag, content},
+        _,
+        %{members: members, messages: messages} = state
+      ) do
+    if is_member?(user_tag, state) do
+      case ProfileCache.get_or_create_by_tag(user_tag) do
+        {:ok, profile} ->
+          messages = [{user_tag, content} | messages]
+          broadcast_message(profile, content, state)
+          {:reply, :ok, %{state | messages: messages}}
+
+        {:error, reason} ->
+          {:reply, {:error, reason}, state}
+      end
+    else
+      {:reply, {:error, :not_member}, state}
+    end
+  end
+
+  @impl true
+  def handle_info(
+        :health_check,
+        %{id: id, members: members, messages: messages, opts: opts} = state
+      ) do
+    Logger.debug("LobbyServer #{id} health check")
+
+    not_empty =
+      Enum.any?(members, fn {user_tag, _} -> ClientRegistry.is_online_by_tag(user_tag) end)
+
+    if not_empty do
+      Process.send_after(self(), :health_check, opts[:health_check_interval_ms])
+      messages = Enum.take(messages, opts[:max_message_history])
+      {:noreply, %{state | messages: messages}}
+    else
+      {:stop, {:shutdown, :empty}, state}
+    end
+  end
+
+  @impl true
   def terminate(reason, %{id: id} = state) do
     Logger.debug("LobbyServer #{id} down: #{inspect(reason)}")
     broadcast_message(%LobbyLeft{lobby_id: id}, state)
 
-    case LobbyRegistry.lobby_terminating(id, state) do
-      {:error, reason} ->
-        Logger.error("Could not save state of terminating LobbyServer #{id}")
-        Logger.error(inspect(reason))
+    normal_exit = fn ->
+      case LobbyRegistry.delete_lobby(id) do
+        :ok ->
+          :ok
+
+        {:error, reason} ->
+          Logger.error("Could not delete LobbyServer #{id} from registry")
+          Logger.error(inspect(reason))
+      end
+    end
+
+    case reason do
+      r when r in [:normal, :shutdown] ->
+        normal_exit.()
+
+      {:shutdown, reason} ->
+        normal_exit.()
 
       _ ->
-        :ok
+        case LobbyRegistry.save_state(id, state) do
+          {:error, reason} ->
+            Logger.error("Could not save state of terminating LobbyServer #{id}")
+            Logger.error(inspect(reason))
+
+          _ ->
+            :ok
+        end
     end
   end
 
@@ -175,11 +257,7 @@ defmodule Lobby.Lobbies.LobbyServer do
         Logger.debug("Member #{user_tag} added as #{role} to lobby #{state.id}")
         state = %{state | members: members}
         send_to_member(user_tag, %LobbyJoined{lobby_id: id})
-
-        broadcast_message(
-          %LobbyMemberUpdate{lobby_id: id, members: members_with_profile(members)},
-          state
-        )
+        broadcast_members_update(state)
 
         broadcast_system_message("User #{user_tag} joined", state)
         {:ok, state}
@@ -208,6 +286,13 @@ defmodule Lobby.Lobbies.LobbyServer do
     Enum.each(members, fn {user_tag, _} ->
       send_to_member(user_tag, message)
     end)
+  end
+
+  defp broadcast_members_update(%{id: id, members: members} = state) do
+    broadcast_message(
+      %LobbyMemberUpdate{lobby_id: id, members: members_with_profile(members)},
+      state
+    )
   end
 
   defp send_to_member(user_tag, message) when is_binary(user_tag) do
@@ -250,7 +335,8 @@ defmodule Lobby.Lobbies.LobbyServer do
   def child_spec(arg) do
     %{
       id: __MODULE__,
-      start: {__MODULE__, :start_link, arg}
+      start: {__MODULE__, :start_link, arg},
+      restart: :transient
     }
   end
 end

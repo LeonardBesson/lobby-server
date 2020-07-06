@@ -32,7 +32,8 @@ config :lobby,
 config :lobby,
   lobby_default_max_size: 8,
   lobby_invite_expiry_millis: 2 * 60_000,
-  lobby_invite_notify_inviter_on_decline: true
+  lobby_invite_notify_inviter_on_decline: true,
+  lobby_health_check_interval_ms: 10_000
 
 config :lobby,
   auth_timeout_millis: 2 * 60_000,

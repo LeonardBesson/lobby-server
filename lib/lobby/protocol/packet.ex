@@ -53,8 +53,9 @@ defmodule Lobby.Protocol.Packet do
     lobby_joined: {22, [lobby_id: :string]},
     lobby_member_update: {23, [lobby_id: :string, members: {:list, LobbyMember}]},
     lobby_left: {24, [lobby_id: :string]},
+    send_lobby_message: {25, [content: :string]},
     new_lobby_message:
-      {25, [lobby_id: :string, profile: {:option, UserProfile}, content: :string]}
+      {26, [lobby_id: :string, profile: {:option, UserProfile}, content: :string]}
   )
 
   @flag_fixed_header 1 <<< 7

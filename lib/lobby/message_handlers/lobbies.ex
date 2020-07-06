@@ -2,7 +2,7 @@ defmodule Lobby.MessageHandlers.Lobbies do
   @moduledoc """
   Handles messages related to lobbies
   """
-  use Lobby.MessageHandler, [:invite_user, :lobby_invite_action]
+  use Lobby.MessageHandler, [:invite_user, :lobby_invite_action, :send_lobby_message]
   alias Lobby.ClientState
   alias Lobby.ClientRegistry
   alias Lobby.ProfileCache
@@ -129,6 +129,25 @@ defmodule Lobby.MessageHandlers.Lobbies do
 
       {:error, :invite_expired} ->
         send_message(self(), %SystemNotification{content: "Invitation expired"})
+    end
+
+    state
+  end
+
+  def handle(:send_lobby_message, msg, %ClientState{user: user} = state) do
+    case ClientRegistry.get_lobby_id!(user.id) do
+      nil ->
+        Logger.error("Received SendLobbyMessage but user #{user.id} is not in a lobby.")
+        send_message(self(), %SystemNotification{content: "You are not in a lobby"})
+
+      lobby_id ->
+        LobbyRegistry.if_online(
+          lobby_id,
+          fn lobby_pid ->
+            LobbyServer.new_message(lobby_pid, user.user_tag, msg.content)
+          end,
+          fn -> send_message(self(), %SystemNotification{content: "Error contacting lobby"}) end
+        )
     end
 
     state

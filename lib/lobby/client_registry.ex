@@ -8,7 +8,9 @@ defmodule Lobby.ClientRegistry do
 
   def create_table do
     {:atomic, :ok} =
-      :mnesia.create_table(@table_name, attributes: [:user_id, :user_tag, :conn_pid, :lobby_id])
+      :mnesia.create_table(@table_name,
+        attributes: [:user_id, :user_tag, :conn_pid, :lobby_id, :online_since]
+      )
 
     {:atomic, :ok} = :mnesia.add_table_index(@table_name, :user_tag)
 
@@ -17,8 +19,11 @@ defmodule Lobby.ClientRegistry do
 
   def client_authenticated(user_id, user_tag, conn_pid)
       when is_binary(user_id) and is_pid(conn_pid) do
+    # TODO: update if exists (reconnect)
     result =
-      mnesia_transaction(fn -> :mnesia.write({@table_name, user_id, user_tag, conn_pid, nil}) end)
+      mnesia_transaction(fn ->
+        :mnesia.write({@table_name, user_id, user_tag, conn_pid, nil, DateTime.utc_now()})
+      end)
 
     case result do
       {:ok, :ok} -> :ok
@@ -29,7 +34,18 @@ defmodule Lobby.ClientRegistry do
   def client_disconnected(nil), do: :ok
 
   def client_disconnected(user_id) when is_binary(user_id) do
-    result = mnesia_transaction(fn -> :mnesia.delete({@table_name, user_id}) end)
+    result =
+      mnesia_transaction(fn ->
+        case :mnesia.read({@table_name, user_id}) do
+          [] ->
+            :ok
+
+          [{@table_name, ^user_id, user_tag, _, lobby_id, _}] ->
+            # TODO: mark for delayed deletion (value in config)
+            # so clients can keep their state after deco/reco
+            :mnesia.write({@table_name, user_id, user_tag, nil, lobby_id, nil})
+        end
+      end)
 
     case result do
       {:ok, :ok} -> :ok
@@ -42,7 +58,8 @@ defmodule Lobby.ClientRegistry do
 
     case result do
       {:ok, []} -> {:ok, nil}
-      {:ok, [{@table_name, ^user_id, _, conn_pid, _}]} -> {:ok, conn_pid}
+      {:ok, [{@table_name, ^user_id, _, nil, _, _}]} -> {:ok, nil}
+      {:ok, [{@table_name, ^user_id, _, conn_pid, _, _}]} -> {:ok, conn_pid}
       _ -> result
     end
   end
@@ -59,7 +76,8 @@ defmodule Lobby.ClientRegistry do
 
     case result do
       {:ok, []} -> {:ok, nil}
-      {:ok, [{@table_name, _, ^user_tag, conn_pid, _}]} -> {:ok, conn_pid}
+      {:ok, [{@table_name, _, ^user_tag, nil, _, _}]} -> {:ok, nil}
+      {:ok, [{@table_name, _, ^user_tag, conn_pid, _, _}]} -> {:ok, conn_pid}
       _ -> result
     end
   end
@@ -79,8 +97,8 @@ defmodule Lobby.ClientRegistry do
             Logger.error("Trying to set lobby id for offline player")
             :user_offline
 
-          [{@table_name, user_id, ^user_tag, conn_pid, _}] ->
-            :mnesia.write({@table_name, user_id, user_tag, conn_pid, lobby_id})
+          [{@table_name, user_id, ^user_tag, conn_pid, _, online_since}] ->
+            :mnesia.write({@table_name, user_id, user_tag, conn_pid, lobby_id, online_since})
         end
       end)
 
@@ -96,7 +114,7 @@ defmodule Lobby.ClientRegistry do
 
     case result do
       {:ok, []} -> {:ok, nil}
-      {:ok, [{@table_name, ^user_id, _, _, lobby_id}]} -> {:ok, lobby_id}
+      {:ok, [{@table_name, ^user_id, _, _, lobby_id, _}]} -> {:ok, lobby_id}
       _ -> result
     end
   end
@@ -113,7 +131,7 @@ defmodule Lobby.ClientRegistry do
 
     case result do
       {:ok, []} -> {:ok, nil}
-      {:ok, [{@table_name, _, ^user_tag, _, lobby_id}]} -> {:ok, lobby_id}
+      {:ok, [{@table_name, _, ^user_tag, _, lobby_id, _}]} -> {:ok, lobby_id}
       _ -> result
     end
   end

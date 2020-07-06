@@ -124,9 +124,7 @@ defmodule Lobby.ClientConnection do
   def handle_info({:tcp_closed, _}, %ClientState{conn: conn, user: user} = state) do
     Logger.info("Peer #{conn.peername} disconnected")
 
-    if user != nil do
-      ClientRegistry.client_disconnected(user.id)
-    end
+    notify_disconnected(state)
 
     {:stop, :normal, state}
   end
@@ -134,9 +132,7 @@ defmodule Lobby.ClientConnection do
   def handle_info({:tcp_error, _, reason}, %ClientState{conn: conn, user: user} = state) do
     Logger.error("Error with peer #{conn.peername}: #{inspect(reason)}")
 
-    if user != nil do
-      ClientRegistry.client_disconnected(user.id)
-    end
+    notify_disconnected(state)
 
     {:stop, :normal, state}
   end
@@ -182,9 +178,7 @@ defmodule Lobby.ClientConnection do
   def handle_info(:close, %ClientState{conn: conn, user: user} = state) do
     conn = Connection.shutdown(conn)
 
-    if user != nil do
-      ClientRegistry.client_disconnected(user.id)
-    end
+    notify_disconnected(state)
 
     {:stop, :normal, %{state | conn: conn}}
   end

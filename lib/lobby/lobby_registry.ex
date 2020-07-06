@@ -39,7 +39,16 @@ defmodule Lobby.LobbyRegistry do
     end)
   end
 
-  def lobby_terminating(id, state) when is_binary(id) do
+  def delete_lobby(id) when is_binary(id) do
+    result = mnesia_transaction(fn -> :mnesia.delete({@table_name, id}) end)
+
+    case result do
+      {:ok, :ok} -> :ok
+      _ -> result
+    end
+  end
+
+  def save_state(id, state) when is_binary(id) do
     result =
       mnesia_transaction(fn ->
         :mnesia.write({@table_name, id, nil, state})
@@ -67,8 +76,7 @@ defmodule Lobby.LobbyRegistry do
     end
   end
 
-  def if_online(lobby_id, callback, offline_callback \\ nil)
-      when is_function(callback, 1) and is_function(offline_callback, 0) do
+  def if_online(lobby_id, callback, offline_callback \\ nil) when is_function(callback, 1) do
     case whereis(lobby_id) do
       {:ok, lobby_pid} when is_pid(lobby_pid) ->
         {:ok, callback.(lobby_pid)}
